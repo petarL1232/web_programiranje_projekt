@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install root dependencies
+        run: npm install
+
+      - name: Check formatting
+        run: npm run format:check
+
+      - name: Install server dependencies
+        working-directory: server
+        run: npm install
+
+      - name: Check server production audit
+        working-directory: server
+        run: npm audit --omit=dev
+
+      - name: Check server syntax
+        working-directory: server
+        run: node --check src/server.js
+
+      - name: Install client dependencies
+        working-directory: client
+        run: npm install
+
+      - name: Check client production audit
+        working-directory: client
+        run: npm audit --omit=dev
+
+      - name: Build Angular client
+        working-directory: client
+        run: npm run build

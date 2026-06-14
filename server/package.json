@@ -1,26 +1,20 @@
 {
   "name": "document-chain-server",
-  "version": "1.0.0",
-  "description": "Express backend for DocumentChain web project",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Express backend for the DocumentChain Web Programming project.",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
-    "dev": "nodemon src/server.js"
+    "dev": "nodemon src/server.js",
+    "check": "node --check src/server.js"
   },
-  "keywords": [
-    "express",
-    "documents",
-    "blockchain",
-    "web-programming"
-  ],
-  "author": "Petar Lukavec",
-  "license": "ISC",
   "dependencies": {
     "cors": "^2.8.5",
-    "dotenv": "^16.4.5",
-    "express": "^4.19.2"
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1"
   },
   "devDependencies": {
-    "nodemon": "^3.1.4"
+    "nodemon": "^3.1.11"
   }
 }

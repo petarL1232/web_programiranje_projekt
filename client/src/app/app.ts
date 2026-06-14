@@ -5,7 +5,7 @@ import { HttpClient } from '@angular/common/http';
   selector: 'app-root',
   imports: [],
   templateUrl: './app.html',
-  styleUrl: './app.scss'
+  styleUrl: './app.scss',
 })
 export class App {
   private readonly http = inject(HttpClient);
@@ -28,7 +28,7 @@ export class App {
         console.error(err);
         this.error.set('Backend request failed. Check if server is running on port 5000.');
         this.loading.set(false);
-      }
+      },
     });
   }
 }
