@@ -1,0 +1,20 @@
+<main class="page">
+  <section class="card">
+    <h1>DocumentChain</h1>
+    <p>
+      Web aplikacija za pohranu dokumenata i provjeru autentičnosti pomoću blockchaina.
+    </p>
+
+    <button type="button" (click)="testBackend()" [disabled]="loading()">
+      {{ loading() ? 'Testing...' : 'Test backend' }}
+    </button>
+
+    @if (backendResponse()) {
+      <pre>{{ backendResponse() }}</pre>
+    }
+
+    @if (error()) {
+      <p class="error">{{ error() }}</p>
+    }
+  </section>
+</main>
