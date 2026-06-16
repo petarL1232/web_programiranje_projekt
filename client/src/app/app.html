@@ -2,9 +2,7 @@
   <section class="card">
     <h1>Web programiranje projekt</h1>
     <h2>DocumentChain</h2>
-    <p>
-      Web aplikacija za pohranu dokumenata i provjeru autentičnosti pomoću blockchaina.
-    </p>
+    <p>Web aplikacija za pohranu dokumenata i provjeru autentičnosti pomoću blockchaina.</p>
 
     <div class="actions">
       <button type="button" (click)="testBackend()" [disabled]="loading()">
@@ -50,7 +48,12 @@
         <input id="registerEmail" #registerEmail type="email" placeholder="test@example.com" />
 
         <label for="registerPassword">Password</label>
-        <input id="registerPassword" #registerPassword type="password" placeholder="at least 8 chars" />
+        <input
+          id="registerPassword"
+          #registerPassword
+          type="password"
+          placeholder="at least 8 chars"
+        />
 
         <button type="submit" [disabled]="loading()">Register</button>
       </form>
@@ -89,18 +92,15 @@
   <section class="card">
     <h2>Upload document</h2>
     <p>
-      Upload računa SHA-256 hash dokumenta, sprema dokument u MongoDB i kreira novi blockchain
-      blok koji pokazuje na prethodni blok.
+      Upload računa SHA-256 hash dokumenta, sprema dokument u MongoDB i kreira novi blockchain blok
+      koji pokazuje na prethodni blok.
     </p>
 
     @if (!token()) {
       <div class="status-box warning">Login je potreban prije uploada dokumenta.</div>
     }
 
-    <form
-      class="upload-form"
-      (submit)="$event.preventDefault(); uploadDocument(uploadFile.files)"
-    >
+    <form class="upload-form" (submit)="$event.preventDefault(); uploadDocument(uploadFile.files)">
       <label for="uploadFile">Document file</label>
       <input id="uploadFile" #uploadFile type="file" />
 
