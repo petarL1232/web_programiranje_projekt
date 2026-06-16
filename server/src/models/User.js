@@ -8,6 +8,7 @@ const userSchema = new mongoose.Schema(
       unique: true,
       lowercase: true,
       trim: true,
+      match: [/^\S+@\S+\.\S+$/, 'Invalid email format'],
     },
     passwordHash: {
       type: String,
@@ -22,15 +23,14 @@ const userSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
+    toJSON: {
+      transform(_document, returnedObject) {
+        delete returnedObject.passwordHash;
+        delete returnedObject.__v;
+        return returnedObject;
+      },
+    },
   }
 );
-
-userSchema.set('toJSON', {
-  transform: (_document, returnedObject) => {
-    delete returnedObject.passwordHash;
-    delete returnedObject.__v;
-    return returnedObject;
-  },
-});
 
 module.exports = mongoose.model('User', userSchema);

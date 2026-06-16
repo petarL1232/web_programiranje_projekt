@@ -1,27 +1,82 @@
 <main class="page">
   <section class="card">
-    <p class="eyebrow">Web programiranje projekt</p>
-    <h1>DocumentChain</h1>
-    <p>Web aplikacija za pohranu dokumenata i provjeru autentičnosti pomoću blockchaina.</p>
+    <h1>Web programiranje projekt</h1>
+    <h2>DocumentChain</h2>
+    <p>
+      Web aplikacija za pohranu dokumenata i provjeru autentičnosti pomoću blockchaina.
+    </p>
 
     <div class="actions">
-      <button type="button" (click)="testBackend()" [disabled]="loadingHealth()">
-        {{ loadingHealth() ? 'Testing...' : 'Test backend' }}
+      <button type="button" (click)="testBackend()" [disabled]="loading()">
+        {{ loading() ? 'Testing...' : 'Test backend' }}
       </button>
 
-      <button type="button" class="secondary" (click)="testModels()" [disabled]="loadingModels()">
-        {{ loadingModels() ? 'Checking...' : 'Test database models' }}
+      <button type="button" (click)="testModels()" [disabled]="loading()">
+        Test database models
       </button>
     </div>
 
     @if (backendResponse()) {
-      <h2>Backend health</h2>
+      <h3>Backend health</h3>
       <pre>{{ backendResponse() }}</pre>
     }
 
-    @if (modelStatusResponse()) {
-      <h2>Model status</h2>
-      <pre>{{ modelStatusResponse() }}</pre>
+    @if (modelResponse()) {
+      <h3>Model status</h3>
+      <pre>{{ modelResponse() }}</pre>
+    }
+  </section>
+
+  <section class="card">
+    <h2>Authentication</h2>
+    <p>Test registracije, prijave i JWT protected rute <code>/api/auth/me</code>.</p>
+
+    @if (currentUser()) {
+      <div class="status-box success">
+        Logged in as <strong>{{ currentUser()?.email }}</strong> ({{ currentUser()?.role }})
+      </div>
+    } @else {
+      <div class="status-box">Not logged in.</div>
+    }
+
+    <div class="auth-grid">
+      <form class="auth-form" (submit)="$event.preventDefault(); register(registerEmail.value, registerPassword.value)">
+        <h3>Register</h3>
+
+        <label for="registerEmail">Email</label>
+        <input id="registerEmail" #registerEmail type="email" placeholder="test@example.com" />
+
+        <label for="registerPassword">Password</label>
+        <input id="registerPassword" #registerPassword type="password" placeholder="at least 8 chars" />
+
+        <button type="submit" [disabled]="loading()">Register</button>
+      </form>
+
+      <form class="auth-form" (submit)="$event.preventDefault(); login(loginEmail.value, loginPassword.value)">
+        <h3>Login</h3>
+
+        <label for="loginEmail">Email</label>
+        <input id="loginEmail" #loginEmail type="email" placeholder="test@example.com" />
+
+        <label for="loginPassword">Password</label>
+        <input id="loginPassword" #loginPassword type="password" placeholder="your password" />
+
+        <button type="submit" [disabled]="loading()">Login</button>
+      </form>
+    </div>
+
+    <div class="actions">
+      <button type="button" (click)="getProfile()" [disabled]="loading() || !token()">
+        Test /auth/me
+      </button>
+      <button type="button" class="secondary" (click)="logout()" [disabled]="!token()">
+        Logout
+      </button>
+    </div>
+
+    @if (authResponse()) {
+      <h3>Auth response</h3>
+      <pre>{{ authResponse() }}</pre>
     }
 
     @if (error()) {

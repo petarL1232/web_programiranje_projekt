@@ -3,6 +3,7 @@ const dotenv = require('dotenv');
 const express = require('express');
 const mongoose = require('mongoose');
 
+const authRoutes = require('./routes/auth.routes');
 const modelStatusRoutes = require('./routes/modelStatus.routes');
 
 dotenv.config();
@@ -42,6 +43,7 @@ app.get('/api/health', (_request, response) => {
   });
 });
 
+app.use('/api/auth', authRoutes);
 app.use('/api/models', modelStatusRoutes);
 
 app.use((request, response) => {
