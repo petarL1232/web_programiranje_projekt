@@ -4,6 +4,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 
 const authRoutes = require('./routes/auth.routes');
+const documentRoutes = require('./routes/document.routes');
 const modelStatusRoutes = require('./routes/modelStatus.routes');
 
 dotenv.config();
@@ -45,6 +46,7 @@ app.get('/api/health', (_request, response) => {
 
 app.use('/api/auth', authRoutes);
 app.use('/api/models', modelStatusRoutes);
+app.use('/api/documents', documentRoutes);
 
 app.use((request, response) => {
   response.status(404).json({
@@ -56,7 +58,14 @@ app.use((request, response) => {
 app.use((error, _request, response, _next) => {
   console.error(error);
 
-  response.status(error.status || 500).json({
+  if (error.code === 'LIMIT_FILE_SIZE') {
+    return response.status(413).json({
+      status: 'error',
+      message: 'File is too large. Maximum allowed size is 5 MB.',
+    });
+  }
+
+  return response.status(error.status || 500).json({
     status: 'error',
     message: error.message || 'Internal server error',
   });

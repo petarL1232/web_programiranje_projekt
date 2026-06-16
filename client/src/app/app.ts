@@ -30,6 +30,7 @@ export class App {
   readonly backendResponse = signal('');
   readonly modelResponse = signal('');
   readonly authResponse = signal('');
+  readonly uploadResponse = signal('');
   readonly error = signal('');
 
   readonly currentUser = signal<AuthUser | null>(this.loadStoredUser());
@@ -76,19 +77,17 @@ export class App {
     this.authResponse.set('');
     this.error.set('');
 
-    this.http
-      .post<AuthResponse>(`${this.apiUrl}/api/auth/register`, { email, password })
-      .subscribe({
-        next: (response) => {
-          this.handleAuthSuccess(response);
-          this.loading.set(false);
-        },
-        error: (err) => {
-          console.error(err);
-          this.error.set(err.error?.message || 'Registration failed.');
-          this.loading.set(false);
-        },
-      });
+    this.http.post<AuthResponse>(`${this.apiUrl}/api/auth/register`, { email, password }).subscribe({
+      next: (response) => {
+        this.handleAuthSuccess(response);
+        this.loading.set(false);
+      },
+      error: (err) => {
+        console.error(err);
+        this.error.set(err.error?.message || 'Registration failed.');
+        this.loading.set(false);
+      },
+    });
   }
 
   login(email: string, password: string): void {
@@ -143,12 +142,50 @@ export class App {
     });
   }
 
+  uploadDocument(files: FileList | null): void {
+    const token = this.token();
+
+    if (!token) {
+      this.error.set('You need to login before uploading a document.');
+      return;
+    }
+
+    if (!files || files.length === 0) {
+      this.error.set('Choose a document first.');
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('document', files[0]);
+
+    this.loading.set(true);
+    this.uploadResponse.set('');
+    this.error.set('');
+
+    const headers = new HttpHeaders({
+      Authorization: `Bearer ${token}`,
+    });
+
+    this.http.post(`${this.apiUrl}/api/documents/upload`, formData, { headers }).subscribe({
+      next: (response) => {
+        this.uploadResponse.set(JSON.stringify(response, null, 2));
+        this.loading.set(false);
+      },
+      error: (err) => {
+        console.error(err);
+        this.error.set(err.error?.message || 'Document upload failed.');
+        this.loading.set(false);
+      },
+    });
+  }
+
   logout(): void {
     localStorage.removeItem('documentChainToken');
     localStorage.removeItem('documentChainUser');
     this.token.set(null);
     this.currentUser.set(null);
     this.authResponse.set('Logged out.');
+    this.uploadResponse.set('');
     this.error.set('');
   }
 

@@ -31,12 +31,17 @@
   margin-top: 18px;
 }
 
-.auth-form {
+.auth-form,
+.upload-form {
   display: grid;
   gap: 10px;
   padding: 16px;
   border: 1px solid #e5e7eb;
   border-radius: 10px;
+}
+
+.upload-form {
+  margin-top: 16px;
 }
 
 label {
@@ -84,6 +89,10 @@ pre {
 
 .status-box.success {
   background: #dcfce7;
+}
+
+.status-box.warning {
+  background: #fef3c7;
 }
 
 .error {
