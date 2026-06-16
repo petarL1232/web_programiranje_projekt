@@ -40,6 +40,7 @@ router.get('/status', (_request, response) => {
           'mimeType',
           'size',
           'fileHash',
+          'isPublic',
           'storageType',
           'fileData',
           'blockId',

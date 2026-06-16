@@ -32,6 +32,11 @@ const documentSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
+    isPublic: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
     storageType: {
       type: String,
       enum: ['mongodb', 'filesystem'],

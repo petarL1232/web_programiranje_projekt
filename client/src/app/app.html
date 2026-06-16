@@ -1,8 +1,11 @@
 <main class="page">
-  <section class="card">
+  <section class="card hero-card">
     <h1>Web programiranje projekt</h1>
     <h2>DocumentChain</h2>
-    <p>Web aplikacija za pohranu dokumenata i provjeru autentičnosti pomoću blockchaina.</p>
+    <p>
+      Web aplikacija za pohranu dokumenata, download dokumenata i provjeru autentičnosti pomoću
+      SHA-256 hasha i blockchain-style evidencije zapisa.
+    </p>
 
     <div class="actions">
       <button type="button" (click)="testBackend()" [disabled]="loading()">
@@ -11,6 +14,14 @@
 
       <button type="button" (click)="testModels()" [disabled]="loading()">
         Test database models
+      </button>
+
+      <button
+        type="button"
+        (click)="loadPublicDocuments(); loadBlockchain()"
+        [disabled]="loading()"
+      >
+        Refresh public data
       </button>
     </div>
 
@@ -78,6 +89,9 @@
       <button type="button" (click)="getProfile()" [disabled]="loading() || !token()">
         Test /auth/me
       </button>
+      <button type="button" (click)="loadMyDocuments()" [disabled]="loading() || !token()">
+        Load my documents
+      </button>
       <button type="button" class="secondary" (click)="logout()" [disabled]="!token()">
         Logout
       </button>
@@ -93,16 +107,24 @@
     <h2>Upload document</h2>
     <p>
       Upload računa SHA-256 hash dokumenta, sprema dokument u MongoDB i kreira novi blockchain blok
-      koji pokazuje na prethodni blok.
+      koji pokazuje na prethodni blok. Dokument može ostati privatan ili biti javan za download.
     </p>
 
     @if (!token()) {
       <div class="status-box warning">Login je potreban prije uploada dokumenta.</div>
     }
 
-    <form class="upload-form" (submit)="$event.preventDefault(); uploadDocument(uploadFile.files)">
+    <form
+      class="upload-form"
+      (submit)="$event.preventDefault(); uploadDocument(uploadFile.files, uploadIsPublic.checked)"
+    >
       <label for="uploadFile">Document file</label>
       <input id="uploadFile" #uploadFile type="file" />
+
+      <label class="checkbox-row" for="uploadIsPublic">
+        <input id="uploadIsPublic" #uploadIsPublic type="checkbox" />
+        Make this document public
+      </label>
 
       <button type="submit" [disabled]="loading() || !token()">
         Upload document and create block
@@ -112,6 +134,141 @@
     @if (uploadResponse()) {
       <h3>Upload receipt</h3>
       <pre>{{ uploadResponse() }}</pre>
+    }
+  </section>
+
+  <section class="card">
+    <h2>My documents</h2>
+    <p>
+      Ovdje loginani korisnik vidi svoje dokumente. Privatni dokument može downloadati samo vlasnik.
+      Ako ga vlasnik označi kao public, svi ga mogu downloadati iz public liste.
+    </p>
+
+    <div class="actions">
+      <button type="button" (click)="loadMyDocuments()" [disabled]="loading() || !token()">
+        Refresh my documents
+      </button>
+    </div>
+
+    @if (!token()) {
+      <div class="status-box warning">Login je potreban za pregled vlastitih dokumenata.</div>
+    }
+
+    @if (myDocuments().length === 0 && token()) {
+      <div class="status-box">Još nemaš uploadanih dokumenata.</div>
+    }
+
+    <div class="document-grid">
+      @for (document of myDocuments(); track document.id) {
+        <article class="document-card">
+          <div class="document-header">
+            <h3>{{ document.originalName }}</h3>
+            <span class="visibility" [class.public]="document.isPublic">
+              {{ document.isPublic ? 'PUBLIC' : 'PRIVATE' }}
+            </span>
+          </div>
+
+          <p><strong>Size:</strong> {{ formatBytes(document.size) }}</p>
+          <p>
+            <strong>File hash:</strong> <code>{{ shortHash(document.fileHash) }}</code>
+          </p>
+          @if (document.block) {
+            <p><strong>Block:</strong> #{{ document.block.index }}</p>
+            <p>
+              <strong>Block hash:</strong> <code>{{ shortHash(document.block.hash) }}</code>
+            </p>
+          }
+
+          <div class="actions compact">
+            <button type="button" (click)="downloadDocument(document)" [disabled]="loading()">
+              Download
+            </button>
+
+            @if (document.isPublic) {
+              <button
+                type="button"
+                class="secondary"
+                (click)="setDocumentVisibility(document.id, false)"
+                [disabled]="loading()"
+              >
+                Make private
+              </button>
+            } @else {
+              <button
+                type="button"
+                class="secondary"
+                (click)="setDocumentVisibility(document.id, true)"
+                [disabled]="loading()"
+              >
+                Make public
+              </button>
+            }
+          </div>
+        </article>
+      }
+    </div>
+
+    @if (documentResponse()) {
+      <h3>Document response</h3>
+      <pre>{{ documentResponse() }}</pre>
+    }
+  </section>
+
+  <section class="card">
+    <h2>Public documents</h2>
+    <p>Svi korisnici mogu vidjeti i downloadati dokumente koje je vlasnik označio kao public.</p>
+
+    <div class="actions">
+      <button type="button" (click)="loadPublicDocuments()" [disabled]="loading()">
+        Refresh public documents
+      </button>
+    </div>
+
+    @if (publicDocuments().length === 0) {
+      <div class="status-box">Trenutno nema public dokumenata.</div>
+    }
+
+    <div class="document-grid">
+      @for (document of publicDocuments(); track document.id) {
+        <article class="document-card public-document">
+          <div class="document-header">
+            <h3>{{ document.originalName }}</h3>
+            <span class="visibility public">PUBLIC</span>
+          </div>
+
+          <p><strong>Size:</strong> {{ formatBytes(document.size) }}</p>
+          <p>
+            <strong>File hash:</strong> <code>{{ shortHash(document.fileHash) }}</code>
+          </p>
+          @if (document.block) {
+            <p><strong>Block:</strong> #{{ document.block.index }}</p>
+          }
+
+          <button type="button" (click)="downloadDocument(document)" [disabled]="loading()">
+            Download public document
+          </button>
+        </article>
+      }
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Blockchain Explorer</h2>
+    <p>
+      Explorer prikazuje cijeli blockchain-style audit log: redni broj bloka, hash dokumenta,
+      previousHash, hash bloka i rezultat osnovne validacije lanca. Privatni dokumenti nisu javno
+      download dostupni, ali njihov blok ostaje dio lanca zapisa.
+    </p>
+
+    <div class="actions">
+      <button type="button" (click)="loadBlockchain()" [disabled]="loading()">
+        Load blockchain explorer
+      </button>
+    </div>
+
+    @if (blockchainResponse()) {
+      <h3>Blockchain response</h3>
+      <pre>{{ blockchainResponse() }}</pre>
     }
 
     @if (error()) {

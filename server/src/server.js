@@ -4,6 +4,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 
 const authRoutes = require('./routes/auth.routes');
+const blockchainRoutes = require('./routes/blockchain.routes');
 const documentRoutes = require('./routes/document.routes');
 const modelStatusRoutes = require('./routes/modelStatus.routes');
 
@@ -47,6 +48,7 @@ app.get('/api/health', (_request, response) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/models', modelStatusRoutes);
 app.use('/api/documents', documentRoutes);
+app.use('/api/blockchain', blockchainRoutes);
 
 app.use((request, response) => {
   response.status(404).json({

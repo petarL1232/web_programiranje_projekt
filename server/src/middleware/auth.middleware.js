@@ -4,20 +4,28 @@ const User = require('../models/User');
 
 const getJwtSecret = () => process.env.JWT_SECRET || 'development-secret-change-me';
 
+const readBearerToken = (request) => {
+  const authHeader = request.headers.authorization;
+
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return null;
+  }
+
+  return authHeader.split(' ')[1];
+};
+
 const authenticate = async (request, response, next) => {
   try {
-    const authHeader = request.headers.authorization;
+    const token = readBearerToken(request);
 
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    if (!token) {
       return response.status(401).json({
         status: 'error',
         message: 'Missing or invalid Authorization header',
       });
     }
 
-    const token = authHeader.split(' ')[1];
     const payload = jwt.verify(token, getJwtSecret());
-
     const user = await User.findById(payload.userId);
 
     if (!user) {
@@ -28,7 +36,7 @@ const authenticate = async (request, response, next) => {
     }
 
     request.user = user;
-    next();
+    return next();
   } catch (_error) {
     return response.status(401).json({
       status: 'error',
@@ -37,6 +45,28 @@ const authenticate = async (request, response, next) => {
   }
 };
 
+const optionalAuthenticate = async (request, _response, next) => {
+  try {
+    const token = readBearerToken(request);
+
+    if (!token) {
+      return next();
+    }
+
+    const payload = jwt.verify(token, getJwtSecret());
+    const user = await User.findById(payload.userId);
+
+    if (user) {
+      request.user = user;
+    }
+
+    return next();
+  } catch (_error) {
+    return next();
+  }
+};
+
 module.exports = {
   authenticate,
+  optionalAuthenticate,
 };
