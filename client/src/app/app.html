@@ -2,9 +2,7 @@
   <section class="card">
     <h1>Web programiranje projekt</h1>
     <h2>DocumentChain</h2>
-    <p>
-      Web aplikacija za pohranu dokumenata i provjeru autentičnosti pomoću blockchaina.
-    </p>
+    <p>Web aplikacija za pohranu dokumenata i provjeru autentičnosti pomoću blockchaina.</p>
 
     <div class="actions">
       <button type="button" (click)="testBackend()" [disabled]="loading()">
@@ -40,19 +38,30 @@
     }
 
     <div class="auth-grid">
-      <form class="auth-form" (submit)="$event.preventDefault(); register(registerEmail.value, registerPassword.value)">
+      <form
+        class="auth-form"
+        (submit)="$event.preventDefault(); register(registerEmail.value, registerPassword.value)"
+      >
         <h3>Register</h3>
 
         <label for="registerEmail">Email</label>
         <input id="registerEmail" #registerEmail type="email" placeholder="test@example.com" />
 
         <label for="registerPassword">Password</label>
-        <input id="registerPassword" #registerPassword type="password" placeholder="at least 8 chars" />
+        <input
+          id="registerPassword"
+          #registerPassword
+          type="password"
+          placeholder="at least 8 chars"
+        />
 
         <button type="submit" [disabled]="loading()">Register</button>
       </form>
 
-      <form class="auth-form" (submit)="$event.preventDefault(); login(loginEmail.value, loginPassword.value)">
+      <form
+        class="auth-form"
+        (submit)="$event.preventDefault(); login(loginEmail.value, loginPassword.value)"
+      >
         <h3>Login</h3>
 
         <label for="loginEmail">Email</label>

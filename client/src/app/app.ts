@@ -76,17 +76,19 @@ export class App {
     this.authResponse.set('');
     this.error.set('');
 
-    this.http.post<AuthResponse>(`${this.apiUrl}/api/auth/register`, { email, password }).subscribe({
-      next: (response) => {
-        this.handleAuthSuccess(response);
-        this.loading.set(false);
-      },
-      error: (err) => {
-        console.error(err);
-        this.error.set(err.error?.message || 'Registration failed.');
-        this.loading.set(false);
-      },
-    });
+    this.http
+      .post<AuthResponse>(`${this.apiUrl}/api/auth/register`, { email, password })
+      .subscribe({
+        next: (response) => {
+          this.handleAuthSuccess(response);
+          this.loading.set(false);
+        },
+        error: (err) => {
+          console.error(err);
+          this.error.set(err.error?.message || 'Registration failed.');
+          this.loading.set(false);
+        },
+      });
   }
 
   login(email: string, password: string): void {
