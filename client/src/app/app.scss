@@ -10,11 +10,27 @@
 
 .card {
   width: 100%;
-  max-width: 640px;
+  max-width: 760px;
   padding: 24px;
   border-radius: 12px;
   background: white;
-  box-shadow: 0 8px 24px rgb(0 0 0 / 8%);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+}
+
+.eyebrow {
+  margin: 0 0 8px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #4f46e5;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 18px;
 }
 
 button {
@@ -22,6 +38,12 @@ button {
   border: 0;
   border-radius: 8px;
   cursor: pointer;
+  color: white;
+  background: #111827;
+}
+
+button.secondary {
+  background: #4f46e5;
 }
 
 button:disabled {
@@ -29,8 +51,13 @@ button:disabled {
   opacity: 0.7;
 }
 
+h2 {
+  margin-top: 24px;
+  font-size: 1rem;
+}
+
 pre {
-  margin-top: 16px;
+  margin-top: 12px;
   padding: 16px;
   border-radius: 8px;
   background: #111827;
@@ -39,5 +66,6 @@ pre {
 }
 
 .error {
+  margin-top: 16px;
   color: #b91c1c;
 }

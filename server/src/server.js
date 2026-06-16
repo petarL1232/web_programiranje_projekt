@@ -1,115 +1,86 @@
-const express = require('express');
 const cors = require('cors');
-const helmet = require('helmet');
-const rateLimit = require('express-rate-limit');
-require('dotenv').config();
+const dotenv = require('dotenv');
+const express = require('express');
+const mongoose = require('mongoose');
 
-const { connectDB, getDbStatus, closeDB } = require('./config/db');
+const modelStatusRoutes = require('./routes/modelStatus.routes');
+
+dotenv.config();
 
 const app = express();
-
-const PORT = process.env.PORT || 5000;
-const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:4200';
-
-const allowedOrigins = CLIENT_URL.split(',')
-  .map((origin) => origin.trim())
-  .filter(Boolean);
-
-if (process.env.NODE_ENV === 'production') {
-  app.set('trust proxy', 1);
-}
-
-app.disable('x-powered-by');
-app.use(helmet());
+const port = process.env.PORT || 5000;
+const clientUrl = process.env.CLIENT_URL || 'http://localhost:4200';
+const mongoUri = process.env.MONGO_URI;
 
 app.use(
   cors({
-    origin(origin, callback) {
-      if (!origin || allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
-
-      return callback(new Error('CORS origin not allowed'));
-    },
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-    credentials: false,
+    origin: clientUrl,
   })
 );
+app.use(express.json());
 
-app.use(express.json({ limit: '100kb' }));
+const getDatabaseStatus = () => {
+  const statusMap = {
+    0: 'disconnected',
+    1: 'connected',
+    2: 'connecting',
+    3: 'disconnecting',
+  };
 
-const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 300,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: {
-    status: 'error',
-    message: 'Too many requests. Try again later.',
-  },
-});
+  return {
+    status: statusMap[mongoose.connection.readyState] || 'unknown',
+    name: mongoose.connection.name || null,
+  };
+};
 
-app.use('/api', apiLimiter);
-
-app.get('/api/health', (req, res) => {
-  const database = getDbStatus();
-  const isDatabaseConnected = database.readyState === 1;
-
-  res.status(isDatabaseConnected ? 200 : 503).json({
-    status: isDatabaseConnected ? 'ok' : 'degraded',
+app.get('/api/health', (_request, response) => {
+  response.json({
+    status: 'ok',
     message: 'DocumentChain backend is running',
-    database: {
-      status: database.status,
-      name: database.databaseName,
-    },
+    database: getDatabaseStatus(),
     timestamp: new Date().toISOString(),
   });
 });
 
-app.use((req, res) => {
-  res.status(404).json({
+app.use('/api/models', modelStatusRoutes);
+
+app.use((request, response) => {
+  response.status(404).json({
     status: 'error',
-    message: 'Route not found',
+    message: `Route ${request.method} ${request.originalUrl} not found`,
   });
 });
 
-app.use((err, req, res, next) => {
-  console.error(err.message);
+app.use((error, _request, response, _next) => {
+  console.error(error);
 
-  if (err.message === 'CORS origin not allowed') {
-    return res.status(403).json({
-      status: 'error',
-      message: 'CORS origin not allowed',
-    });
+  response.status(error.status || 500).json({
+    status: 'error',
+    message: error.message || 'Internal server error',
+  });
+});
+
+const connectToDatabase = async () => {
+  if (!mongoUri) {
+    console.warn('MONGO_URI is not set. Server will start without a database connection.');
+    return;
   }
 
-  return res.status(500).json({
-    status: 'error',
-    message: 'Internal server error',
-  });
-});
+  await mongoose.connect(mongoUri);
+  console.log(`MongoDB connected: ${mongoose.connection.name}`);
+};
 
 const startServer = async () => {
   try {
-    await connectDB();
+    await connectToDatabase();
 
-    app.listen(PORT, () => {
-      console.log(`DocumentChain backend is running on http://localhost:${PORT}`);
+    app.listen(port, () => {
+      console.log(`DocumentChain backend is running on http://localhost:${port}`);
     });
   } catch (error) {
-    console.error('Failed to start server:', error.message);
+    console.error('Failed to start server:', error);
     process.exit(1);
   }
 };
-
-const shutdown = async (signal) => {
-  console.log(`${signal} received. Closing MongoDB connection...`);
-  await closeDB();
-  process.exit(0);
-};
-
-process.on('SIGINT', () => shutdown('SIGINT'));
-process.on('SIGTERM', () => shutdown('SIGTERM'));
 
 startServer();
