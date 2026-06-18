@@ -4,7 +4,16 @@ const calculateFileHash = (buffer) => crypto.createHash('sha256').update(buffer)
 
 const normalizeHash = (blockData) => blockData.documentHash || blockData.fileHash;
 
-const buildBlockHashInput = ({ index, documentId, owner, documentHash, fileHash, previousHash, createdAt, nonce }) => {
+const buildBlockHashInput = ({
+  index,
+  documentId,
+  owner,
+  documentHash,
+  fileHash,
+  previousHash,
+  createdAt,
+  nonce,
+}) => {
   const baseFields = [
     index,
     documentId.toString(),
@@ -20,7 +29,15 @@ const buildBlockHashInput = ({ index, documentId, owner, documentHash, fileHash,
     return baseFields.join('|');
   }
 
-  return [index, documentId.toString(), owner.toString(), normalizeHash({ documentHash, fileHash }), previousHash, new Date(createdAt).toISOString(), nonce].join('|');
+  return [
+    index,
+    documentId.toString(),
+    owner.toString(),
+    normalizeHash({ documentHash, fileHash }),
+    previousHash,
+    new Date(createdAt).toISOString(),
+    nonce,
+  ].join('|');
 };
 
 const calculateBlockHash = (blockData) =>

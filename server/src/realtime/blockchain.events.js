@@ -24,7 +24,9 @@ const broadcastBlockCreated = async ({ blockId }) => {
 
   const { summary, blocks } = await loadPublicBlockchainPayload();
   const blockIdText = blockId ? blockId.toString() : null;
-  const block = blockIdText ? blocks.find((item) => item.id === blockIdText) : blocks.at(-1) || null;
+  const block = blockIdText
+    ? blocks.find((item) => item.id === blockIdText)
+    : blocks.at(-1) || null;
 
   socketServer.emit('blockchain:block-created', {
     event: 'blockchain:block-created',

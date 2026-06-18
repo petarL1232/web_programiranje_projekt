@@ -56,7 +56,13 @@ const getValidationProblems = ({ isHashValid, isPreviousHashValid, isIndexSequen
   return problems;
 };
 
-const toValidatedBlock = ({ block, expectedPreviousHash, expectedIndex, firstBrokenIndex, requestUser }) => {
+const toValidatedBlock = ({
+  block,
+  expectedPreviousHash,
+  expectedIndex,
+  firstBrokenIndex,
+  requestUser,
+}) => {
   const documentId = getDocumentIdForHash(block.documentId);
   const owner = getOwnerIdForHash(block);
   const documentHash = getDocumentHashForBlock(block);
@@ -187,7 +193,9 @@ const getChainStatusForBlock = (summary, blockIndex) => ({
   directBrokenBlockIndexes: summary.directBrokenBlockIndexes,
   affectedBlockIndexes: summary.affectedBlockIndexes,
   isBlockAffectedByChainBreak:
-    !summary.isChainValid && summary.affectedFromIndex !== null && blockIndex >= summary.affectedFromIndex,
+    !summary.isChainValid &&
+    summary.affectedFromIndex !== null &&
+    blockIndex >= summary.affectedFromIndex,
   explanation:
     'This checks only blockchain block records, not document files. If an earlier block is changed, every later record becomes less trustworthy because the chain has already broken.',
 });

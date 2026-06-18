@@ -8,7 +8,11 @@ const Document = require('../models/Document');
 const { calculateBlockHash, calculateFileHash } = require('../utils/blockchain');
 const { getChainStatusForBlock, loadValidatedBlockchain } = require('../utils/chainValidation');
 const { readDocumentBuffer, saveDocumentBuffer } = require('../utils/documentStorage');
-const { MAX_FILE_SIZE_BYTES, sanitizeOriginalFileName, validateUploadedFile } = require('../utils/fileSecurity');
+const {
+  MAX_FILE_SIZE_BYTES,
+  sanitizeOriginalFileName,
+  validateUploadedFile,
+} = require('../utils/fileSecurity');
 
 const router = express.Router();
 
@@ -22,7 +26,8 @@ const upload = multer({
 
 const sameId = (left, right) => Boolean(left && right && left.toString() === right.toString());
 const getDocumentOwnerId = (document) => document.owner || document.userId;
-const isDocumentOwner = (document, user) => Boolean(user && sameId(getDocumentOwnerId(document), user._id));
+const isDocumentOwner = (document, user) =>
+  Boolean(user && sameId(getDocumentOwnerId(document), user._id));
 const getDocumentHash = (document) => document.documentHash || document.fileHash;
 const getBlockDocumentHash = (block) => block.documentHash || block.fileHash;
 
@@ -173,11 +178,7 @@ const verifyUploadedHandler = async (request, response, next) => {
     const documentHash = calculateFileHash(request.file.buffer);
 
     const matchingDocuments = await Document.find({
-      $or: [
-        { userId: request.user._id },
-        { owner: request.user._id },
-        { isPublic: true },
-      ],
+      $or: [{ userId: request.user._id }, { owner: request.user._id }, { isPublic: true }],
       $and: [
         {
           $or: [{ documentHash }, { fileHash: documentHash }],
@@ -451,7 +452,9 @@ router.get('/:documentId/verify-stored', authenticate, verifyStoredHandler);
 
 router.get('/:documentId/download', optionalAuthenticate, async (request, response, next) => {
   try {
-    const document = await Document.findById(request.params.documentId).select('+fileData').populate('blockId');
+    const document = await Document.findById(request.params.documentId)
+      .select('+fileData')
+      .populate('blockId');
 
     if (!document) {
       return response.status(404).json({
