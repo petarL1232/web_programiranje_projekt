@@ -1,23 +1,45 @@
 const cors = require('cors');
 const dotenv = require('dotenv');
 const express = require('express');
+const http = require('http');
 const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
 const mongoose = require('mongoose');
+const { Server } = require('socket.io');
 
 const authRoutes = require('./routes/auth.routes');
 const blockchainRoutes = require('./routes/blockchain.routes');
 const devRoutes = require('./routes/dev.routes');
 const documentRoutes = require('./routes/document.routes');
 const modelStatusRoutes = require('./routes/modelStatus.routes');
+const { setSocketServer } = require('./realtime/blockchain.events');
 
 // Load .env before reading process.env values.
 dotenv.config();
 
 const app = express();
+const server = http.createServer(app);
 const port = process.env.PORT || 5000;
 const clientUrl = process.env.CLIENT_URL || 'http://localhost:4200';
 const mongoUri = process.env.MONGO_URI;
+
+const io = new Server(server, {
+  cors: {
+    origin: clientUrl,
+    methods: ['GET', 'POST', 'PATCH'],
+  },
+});
+
+setSocketServer(io);
+
+io.on('connection', (socket) => {
+  socket.emit('blockchain:connected', {
+    status: 'ok',
+    message: 'Connected to DocumentChain realtime blockchain explorer',
+    socketId: socket.id,
+    timestamp: new Date().toISOString(),
+  });
+});
 
 app.use(
   helmet({
@@ -111,7 +133,7 @@ const startServer = async () => {
   try {
     await connectToDatabase();
 
-    app.listen(port, () => {
+    server.listen(port, () => {
       console.log(`DocumentChain backend is running on http://localhost:${port}`);
     });
   } catch (error) {

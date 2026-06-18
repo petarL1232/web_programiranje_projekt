@@ -3,6 +3,7 @@ const express = require('express');
 const Block = require('../models/Block');
 const Document = require('../models/Document');
 const { clearDocumentStorage } = require('../utils/documentStorage');
+const { broadcastChainChanged } = require('../realtime/blockchain.events');
 
 const router = express.Router();
 
@@ -22,6 +23,10 @@ router.post('/reset-documents-blocks', requireDevelopment, async (_request, resp
     const deletedDocuments = await Document.deleteMany({});
     const deletedBlocks = await Block.deleteMany({});
     await clearDocumentStorage();
+
+    broadcastChainChanged('Development reset deleted all documents and blocks').catch((error) => {
+      console.error('Failed to broadcast blockchain reset event:', error);
+    });
 
     return response.json({
       status: 'ok',

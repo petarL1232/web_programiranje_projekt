@@ -1,11 +1,11 @@
 const express = require('express');
 
-const { authenticate } = require('../middleware/auth.middleware');
+const { optionalAuthenticate } = require('../middleware/auth.middleware');
 const { loadValidatedBlockchain } = require('../utils/chainValidation');
 
 const router = express.Router();
 
-router.get('/', authenticate, async (request, response, next) => {
+router.get('/', optionalAuthenticate, async (request, response, next) => {
   try {
     const { summary, blocks } = await loadValidatedBlockchain({
       includeDocuments: true,
@@ -25,7 +25,7 @@ router.get('/', authenticate, async (request, response, next) => {
   }
 });
 
-router.get('/validate', authenticate, async (_request, response, next) => {
+router.get('/validate', optionalAuthenticate, async (_request, response, next) => {
   try {
     const { summary } = await loadValidatedBlockchain({ includeDocuments: false });
 

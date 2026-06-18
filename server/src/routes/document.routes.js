@@ -2,16 +2,13 @@ const express = require('express');
 const multer = require('multer');
 
 const { authenticate, optionalAuthenticate } = require('../middleware/auth.middleware');
+const { broadcastBlockCreated, broadcastChainChanged } = require('../realtime/blockchain.events');
 const Block = require('../models/Block');
 const Document = require('../models/Document');
 const { calculateBlockHash, calculateFileHash } = require('../utils/blockchain');
 const { getChainStatusForBlock, loadValidatedBlockchain } = require('../utils/chainValidation');
 const { readDocumentBuffer, saveDocumentBuffer } = require('../utils/documentStorage');
-const {
-  MAX_FILE_SIZE_BYTES,
-  sanitizeOriginalFileName,
-  validateUploadedFile,
-} = require('../utils/fileSecurity');
+const { MAX_FILE_SIZE_BYTES, sanitizeOriginalFileName, validateUploadedFile } = require('../utils/fileSecurity');
 
 const router = express.Router();
 
@@ -25,8 +22,7 @@ const upload = multer({
 
 const sameId = (left, right) => Boolean(left && right && left.toString() === right.toString());
 const getDocumentOwnerId = (document) => document.owner || document.userId;
-const isDocumentOwner = (document, user) =>
-  Boolean(user && sameId(getDocumentOwnerId(document), user._id));
+const isDocumentOwner = (document, user) => Boolean(user && sameId(getDocumentOwnerId(document), user._id));
 const getDocumentHash = (document) => document.documentHash || document.fileHash;
 const getBlockDocumentHash = (block) => block.documentHash || block.fileHash;
 
@@ -158,6 +154,10 @@ router.post('/upload', authenticate, upload.single('document'), async (request, 
     document.blockId = block._id;
     await document.save();
 
+    broadcastBlockCreated({ blockId: block._id }).catch((error) => {
+      console.error('Failed to broadcast blockchain block-created event:', error);
+    });
+
     return response.status(201).json({
       status: 'ok',
       ...toUploadReceipt({ document, block }),
@@ -173,7 +173,11 @@ const verifyUploadedHandler = async (request, response, next) => {
     const documentHash = calculateFileHash(request.file.buffer);
 
     const matchingDocuments = await Document.find({
-      $or: [{ userId: request.user._id }, { owner: request.user._id }, { isPublic: true }],
+      $or: [
+        { userId: request.user._id },
+        { owner: request.user._id },
+        { isPublic: true },
+      ],
       $and: [
         {
           $or: [{ documentHash }, { fileHash: documentHash }],
@@ -326,6 +330,10 @@ router.patch('/:documentId/visibility', authenticate, async (request, response, 
     document.isPublic = request.body.isPublic;
     await document.save();
 
+    broadcastChainChanged('Document visibility changed').catch((error) => {
+      console.error('Failed to broadcast blockchain chain-updated event:', error);
+    });
+
     return response.json({
       status: 'ok',
       message: document.isPublic ? 'Document is now public' : 'Document is now private',
@@ -443,9 +451,7 @@ router.get('/:documentId/verify-stored', authenticate, verifyStoredHandler);
 
 router.get('/:documentId/download', optionalAuthenticate, async (request, response, next) => {
   try {
-    const document = await Document.findById(request.params.documentId)
-      .select('+fileData')
-      .populate('blockId');
+    const document = await Document.findById(request.params.documentId).select('+fileData').populate('blockId');
 
     if (!document) {
       return response.status(404).json({

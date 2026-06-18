@@ -1,4 +1,5 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, inject, signal } from '@angular/core';
+import { io, Socket } from 'socket.io-client';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 
 type AuthUser = {
@@ -113,15 +114,82 @@ type BlockchainValidationResponse = {
   };
 };
 
+type AppView = 'dashboard' | 'documents' | 'verify' | 'blockchain' | 'dev';
+
+type BlockchainExplorerDocument = {
+  id: string;
+  originalName: string;
+  isPublic: boolean;
+  isOwnedByCurrentUser?: boolean;
+};
+
+type BlockchainBlockValidation = {
+  isHashValid: boolean;
+  isPreviousHashValid: boolean;
+  isIndexSequential: boolean;
+  isDirectlyValid: boolean;
+  isBlockValid: boolean;
+  isTrusted: boolean;
+  breaksChainHere: boolean;
+  isAffectedByEarlierBreak: boolean;
+  problems: string[];
+};
+
+type BlockchainExplorerBlock = {
+  id: string;
+  index: number;
+  document: BlockchainExplorerDocument | null;
+  documentId: string;
+  owner?: string | null;
+  documentHash: string;
+  fileHash?: string;
+  previousHash: string;
+  expectedPreviousHash?: string;
+  hash: string;
+  calculatedHash?: string;
+  nonce: number;
+  createdAt: string;
+  validation: BlockchainBlockValidation;
+};
+
+type BlockchainSummary = {
+  totalBlocks: number;
+  isChainValid: boolean;
+  firstBrokenIndex: number | null;
+  brokenAtIndex: number | null;
+  affectedFromIndex: number | null;
+  directBrokenBlockIndexes: number[];
+  affectedBlockIndexes: number[];
+  lastBlockHash: string | null;
+  message: string;
+};
+
+type BlockchainExplorerResponse = {
+  status: string;
+  message: string;
+  summary: BlockchainSummary;
+  blocks: BlockchainExplorerBlock[];
+};
+
+type BlockchainRealtimeEvent = {
+  event: string;
+  message: string;
+  block?: BlockchainExplorerBlock | null;
+  blocks?: BlockchainExplorerBlock[];
+  summary?: BlockchainSummary;
+  timestamp: string;
+};
+
 @Component({
   selector: 'app-root',
   imports: [],
   templateUrl: './app.html',
   styleUrl: './app.scss',
 })
-export class App {
+export class App implements OnInit, OnDestroy {
   private readonly http = inject(HttpClient);
   private readonly apiUrl = 'http://localhost:5000';
+  private socket: Socket | null = null;
 
   readonly loading = signal(false);
   readonly backendResponse = signal('');
@@ -143,6 +211,11 @@ export class App {
   readonly chainValidationMessage = signal('');
   readonly chainBreakDetails = signal('');
   readonly chainValidationOk = signal<boolean | null>(null);
+  readonly blockchainSummary = signal<BlockchainSummary | null>(null);
+  readonly blockchainBlocks = signal<BlockchainExplorerBlock[]>([]);
+  readonly socketConnected = signal(false);
+  readonly realtimeEvents = signal<string[]>([]);
+  readonly activeView = signal<AppView>('dashboard');
   readonly devResponse = signal('');
   readonly error = signal('');
 
@@ -150,6 +223,36 @@ export class App {
   readonly token = signal<string | null>(localStorage.getItem('documentChainToken'));
   readonly myDocuments = signal<DocumentSummary[]>([]);
   readonly publicDocuments = signal<DocumentSummary[]>([]);
+
+  ngOnInit(): void {
+    this.connectRealtime();
+    this.loadPublicDocuments();
+    this.loadBlockchain();
+
+    if (this.token()) {
+      this.loadMyDocuments();
+    }
+  }
+
+  ngOnDestroy(): void {
+    this.socket?.disconnect();
+  }
+
+  setActiveView(view: AppView): void {
+    this.activeView.set(view);
+
+    if (view === 'blockchain') {
+      this.loadBlockchain();
+    }
+
+    if (view === 'documents') {
+      this.loadPublicDocuments();
+
+      if (this.token()) {
+        this.loadMyDocuments();
+      }
+    }
+  }
 
   testBackend(): void {
     this.loading.set(true);
@@ -192,22 +295,20 @@ export class App {
     this.authResponse.set('');
     this.error.set('');
 
-    this.http
-      .post<AuthResponse>(`${this.apiUrl}/api/auth/register`, { email, password })
-      .subscribe({
-        next: (response) => {
-          this.handleAuthSuccess(response);
-          this.loadMyDocuments();
-          this.loadPublicDocuments();
-          this.loadBlockchain();
-          this.loading.set(false);
-        },
-        error: (err) => {
-          console.error(err);
-          this.error.set(err.error?.message || 'Registration failed.');
-          this.loading.set(false);
-        },
-      });
+    this.http.post<AuthResponse>(`${this.apiUrl}/api/auth/register`, { email, password }).subscribe({
+      next: (response) => {
+        this.handleAuthSuccess(response);
+        this.loadMyDocuments();
+        this.loadPublicDocuments();
+        this.loadBlockchain();
+        this.loading.set(false);
+      },
+      error: (err) => {
+        console.error(err);
+        this.error.set(err.error?.message || 'Registration failed.');
+        this.loading.set(false);
+      },
+    });
   }
 
   login(email: string, password: string): void {
@@ -347,9 +448,11 @@ export class App {
     this.error.set('');
 
     this.http
-      .patch<
-        DocumentListResponse | { status: string; message: string; document: DocumentSummary }
-      >(`${this.apiUrl}/api/documents/${document.id}/visibility`, { isPublic: !document.isPublic }, { headers: this.authHeaders() })
+      .patch<DocumentListResponse | { status: string; message: string; document: DocumentSummary }>(
+        `${this.apiUrl}/api/documents/${document.id}/visibility`,
+        { isPublic: !document.isPublic },
+        { headers: this.authHeaders() }
+      )
       .subscribe({
         next: (response) => {
           this.documentResponse.set(JSON.stringify(response, null, 2));
@@ -367,32 +470,22 @@ export class App {
   }
 
   loadBlockchain(): void {
-    if (!this.token()) {
-      this.error.set('Login is required to load blockchain explorer.');
-      return;
-    }
+    const options = this.token() ? { headers: this.authHeaders() } : {};
 
-    this.http
-      .get(`${this.apiUrl}/api/blockchain`, {
-        headers: this.authHeaders(),
-      })
-      .subscribe({
-        next: (response) => {
-          this.blockchainResponse.set(JSON.stringify(response, null, 2));
-        },
-        error: (err) => {
-          console.error(err);
-          this.error.set(err.error?.message || 'Failed to load blockchain explorer.');
-        },
-      });
+    this.http.get<BlockchainExplorerResponse>(`${this.apiUrl}/api/blockchain`, options).subscribe({
+      next: (response) => {
+        this.blockchainSummary.set(response.summary);
+        this.blockchainBlocks.set(response.blocks);
+        this.blockchainResponse.set(JSON.stringify(response, null, 2));
+      },
+      error: (err) => {
+        console.error(err);
+        this.error.set(err.error?.message || 'Failed to load blockchain explorer.');
+      },
+    });
   }
 
   validateBlockchain(): void {
-    if (!this.token()) {
-      this.error.set('Login is required to validate the blockchain.');
-      return;
-    }
-
     this.loading.set(true);
     this.chainValidationResponse.set('');
     this.chainValidationMessage.set('');
@@ -401,11 +494,9 @@ export class App {
     this.devResponse.set('');
     this.error.set('');
 
-    this.http
-      .get<BlockchainValidationResponse>(`${this.apiUrl}/api/blockchain/validate`, {
-        headers: this.authHeaders(),
-      })
-      .subscribe({
+    const options = this.token() ? { headers: this.authHeaders() } : {};
+
+    this.http.get<BlockchainValidationResponse>(`${this.apiUrl}/api/blockchain/validate`, options).subscribe({
         next: (response) => {
           const isChainValid = response.validation?.isChainValid ?? false;
           const brokenAtIndex = response.validation?.brokenAtIndex ?? null;
@@ -417,12 +508,12 @@ export class App {
           this.chainValidationMessage.set(
             isChainValid
               ? 'Blockchain lanac je valjan. Ova provjera čita samo block zapise, ne fileove.'
-              : `Blockchain lanac je pukao na bloku #${brokenAtIndex}. Blokovi od #${affectedFromIndex} nadalje nisu potpuno pouzdani.`,
+              : `Blockchain lanac je pukao na bloku #${brokenAtIndex}. Blokovi od #${affectedFromIndex} nadalje nisu potpuno pouzdani.`
           );
           this.chainBreakDetails.set(
             isChainValid
               ? ''
-              : `Direktno neispravni blokovi: ${this.formatBlockIndexes(directBroken)}. Zahvaćeni blokovi: ${this.formatBlockIndexes(affectedBlocks)}.`,
+              : `Direktno neispravni blokovi: ${this.formatBlockIndexes(directBroken)}. Zahvaćeni blokovi: ${this.formatBlockIndexes(affectedBlocks)}.`
           );
           this.chainValidationResponse.set(JSON.stringify(response, null, 2));
           this.loading.set(false);
@@ -456,8 +547,7 @@ export class App {
       error: (err) => {
         console.error(err);
         this.error.set(
-          err.error?.message ||
-            'Download failed. Private documents can be downloaded only by owner.',
+          err.error?.message || 'Download failed. Private documents can be downloaded only by owner.'
         );
         this.loading.set(false);
       },
@@ -485,7 +575,7 @@ export class App {
       .post<StoredVerificationResponse>(
         `${this.apiUrl}/api/documents/${document.id}/verify`,
         {},
-        { headers: this.authHeaders() },
+        { headers: this.authHeaders() }
       )
       .subscribe({
         next: (response) => {
@@ -493,8 +583,7 @@ export class App {
           const blockchainOk = response.verification?.blockchainIntegrity?.isValid ?? false;
           const wholeChainOk = response.verification?.chainIntegrity?.isChainValid ?? false;
           const firstBrokenIndex = response.verification?.chainIntegrity?.firstBrokenIndex ?? null;
-          const affectedFromIndex =
-            response.verification?.chainIntegrity?.affectedFromIndex ?? null;
+          const affectedFromIndex = response.verification?.chainIntegrity?.affectedFromIndex ?? null;
           const isAuthentic = response.verification?.isAuthentic ?? false;
           let message =
             'Dokument je izmijenjen ili oštećen: trenutni hash ne odgovara Document/Block hashu.';
@@ -505,8 +594,7 @@ export class App {
           } else if (documentOk && blockchainOk && !wholeChainOk) {
             message = `Hash dokumenta i njegov blok izgledaju OK, ali cijeli blockchain lanac je pukao na bloku #${firstBrokenIndex}.`;
           } else if (documentOk && !blockchainOk) {
-            message =
-              'Hash dokumenta je ispravan, ali hash bloka ili direct previousHash veza nije valjana.';
+            message = 'Hash dokumenta je ispravan, ali hash bloka ili direct previousHash veza nije valjana.';
           }
 
           this.storedDocumentCheckOk.set(documentOk);
@@ -515,7 +603,7 @@ export class App {
           this.storedChainBreakMessage.set(
             wholeChainOk
               ? ''
-              : `Lanac je pukao na bloku #${firstBrokenIndex}; blokovi od #${affectedFromIndex} nadalje nisu potpuno pouzdani.`,
+              : `Lanac je pukao na bloku #${firstBrokenIndex}; blokovi od #${affectedFromIndex} nadalje nisu potpuno pouzdani.`
           );
           this.storedVerificationMessage.set(message);
           this.verifyMessage.set(message);
@@ -553,7 +641,7 @@ export class App {
       .post<UploadedVerificationResponse>(
         `${this.apiUrl}/api/documents/verify-uploaded`,
         formData,
-        { headers: this.authHeaders() },
+        { headers: this.authHeaders() }
       )
       .subscribe({
         next: (response) => {
@@ -566,16 +654,14 @@ export class App {
           if (!isKnown) {
             this.verifyMessage.set('Dokument je nepoznat ili izmijenjen.');
           } else if (chainOk) {
-            this.verifyMessage.set(
-              'Dokument postoji u valjanoj blockchain evidenciji kojoj imaš pristup.',
-            );
+            this.verifyMessage.set('Dokument postoji u valjanoj blockchain evidenciji kojoj imaš pristup.');
           } else if (affectedMatches.length > 0) {
             this.verifyMessage.set(
-              `Hash dokumenta postoji u dostupnim zapisima, ali lanac je pukao na bloku #${firstBrokenIndex}, prije ili na pronađenom zapisu.`,
+              `Hash dokumenta postoji u dostupnim zapisima, ali lanac je pukao na bloku #${firstBrokenIndex}, prije ili na pronađenom zapisu.`
             );
           } else {
             this.verifyMessage.set(
-              `Hash dokumenta postoji u dostupnim zapisima, ali cijeli blockchain lanac nije valjan. Prvi problem je na bloku #${firstBrokenIndex}.`,
+              `Hash dokumenta postoji u dostupnim zapisima, ali cijeli blockchain lanac nije valjan. Prvi problem je na bloku #${firstBrokenIndex}.`
             );
           }
           this.verifyUploadResponse.set(JSON.stringify(response, null, 2));
@@ -591,7 +677,7 @@ export class App {
 
   resetTestData(): void {
     const confirmed = window.confirm(
-      'This deletes all documents, stored files, and blockchain blocks from the local development database. Users stay saved. Continue?',
+      'This deletes all documents, stored files, and blockchain blocks from the local development database. Users stay saved. Continue?'
     );
 
     if (!confirmed) {
@@ -619,6 +705,8 @@ export class App {
         this.storedWholeChainCheckOk.set(null);
         this.storedChainBreakMessage.set('');
         this.blockchainResponse.set('');
+        this.blockchainBlocks.set([]);
+        this.blockchainSummary.set(null);
         this.chainValidationResponse.set('');
         this.chainValidationMessage.set('');
         this.chainBreakDetails.set('');
@@ -628,8 +716,7 @@ export class App {
       error: (err) => {
         console.error(err);
         this.error.set(
-          err.error?.message ||
-            'Development reset failed. This route works only in NODE_ENV=development.',
+          err.error?.message || 'Development reset failed. This route works only in NODE_ENV=development.'
         );
         this.loading.set(false);
       },
@@ -661,6 +748,106 @@ export class App {
     this.chainValidationOk.set(null);
     this.devResponse.set('');
     this.error.set('');
+    this.loadBlockchain();
+  }
+
+  private connectRealtime(): void {
+    if (this.socket) {
+      return;
+    }
+
+    this.socket = io(this.apiUrl, {
+      transports: ['websocket', 'polling'],
+    });
+
+    this.socket.on('connect', () => {
+      this.socketConnected.set(true);
+      this.addRealtimeEvent('Realtime explorer connected.');
+    });
+
+    this.socket.on('disconnect', () => {
+      this.socketConnected.set(false);
+      this.addRealtimeEvent('Realtime explorer disconnected.');
+    });
+
+    this.socket.on('blockchain:connected', (event: BlockchainRealtimeEvent) => {
+      this.addRealtimeEvent(event.message || 'Connected to blockchain realtime channel.');
+    });
+
+    this.socket.on('blockchain:block-created', (event: BlockchainRealtimeEvent) => {
+      this.handleRealtimeBlockchainEvent(event);
+    });
+
+    this.socket.on('blockchain:chain-updated', (event: BlockchainRealtimeEvent) => {
+      this.handleRealtimeBlockchainEvent(event);
+    });
+  }
+
+  private handleRealtimeBlockchainEvent(event: BlockchainRealtimeEvent): void {
+    if (event.summary) {
+      this.blockchainSummary.set(event.summary);
+    }
+
+    if (event.blocks) {
+      this.blockchainBlocks.set(event.blocks);
+    } else if (event.block) {
+      this.upsertBlockchainBlock(event.block);
+    }
+
+    this.blockchainResponse.set(
+      JSON.stringify(
+        {
+          status: 'ok',
+          message: event.message,
+          summary: this.blockchainSummary(),
+          blocks: this.blockchainBlocks(),
+        },
+        null,
+        2
+      )
+    );
+    this.addRealtimeEvent(event.message);
+  }
+
+  private upsertBlockchainBlock(block: BlockchainExplorerBlock): void {
+    const blocks = this.blockchainBlocks();
+    const existingIndex = blocks.findIndex((item) => item.id === block.id);
+    const nextBlocks =
+      existingIndex === -1
+        ? [...blocks, block]
+        : blocks.map((item) => (item.id === block.id ? block : item));
+
+    nextBlocks.sort((left, right) => left.index - right.index);
+    this.blockchainBlocks.set(nextBlocks);
+  }
+
+  private addRealtimeEvent(message: string): void {
+    const timestamp = new Date().toLocaleTimeString();
+    this.realtimeEvents.set([`${timestamp} - ${message}`, ...this.realtimeEvents()].slice(0, 8));
+  }
+
+  formatDate(value: string | Date | undefined): string {
+    if (!value) {
+      return 'unknown';
+    }
+
+    return new Date(value).toLocaleString();
+  }
+
+  blockStatusLabel(block: BlockchainExplorerBlock): string {
+    if (block.validation.isTrusted) {
+      return 'trusted';
+    }
+
+    if (block.validation.breaksChainHere) {
+      return 'breaks chain here';
+    }
+
+    if (block.validation.isAffectedByEarlierBreak) {
+      return 'affected by earlier break';
+    }
+
+    return 'invalid';
   }
 
   formatBytes(size: number): string {

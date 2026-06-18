@@ -6,7 +6,10 @@ const ALLOWED_FILE_TYPES = new Map([
   ['.pdf', new Set(['application/pdf'])],
   ['.txt', new Set(['text/plain'])],
   ['.doc', new Set(['application/msword'])],
-  ['.docx', new Set(['application/vnd.openxmlformats-officedocument.wordprocessingml.document'])],
+  [
+    '.docx',
+    new Set(['application/vnd.openxmlformats-officedocument.wordprocessingml.document']),
+  ],
   ['.png', new Set(['image/png'])],
   ['.jpg', new Set(['image/jpeg'])],
   ['.jpeg', new Set(['image/jpeg'])],
