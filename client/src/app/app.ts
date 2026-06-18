@@ -29,8 +29,11 @@ type DocumentSummary = {
   originalName: string;
   mimeType: string;
   size: number;
+  documentHash?: string;
   fileHash: string;
   isPublic: boolean;
+  isOwnedByCurrentUser?: boolean;
+  canDownload?: boolean;
   storageType: string;
   createdAt: string;
   updatedAt: string;
@@ -41,6 +44,73 @@ type DocumentListResponse = {
   status: string;
   message?: string;
   documents: DocumentSummary[];
+};
+
+type StoredVerificationResponse = {
+  status: string;
+  message: string;
+  verification?: {
+    valid?: boolean;
+    result: string;
+    isAuthentic: boolean;
+    documentIntegrity?: {
+      isValid: boolean;
+      currentDocumentHash?: string;
+      currentFileHash?: string;
+      blockchainDocumentHash?: string;
+      blockchainFileHash?: string;
+      storedDocumentHash: string;
+    };
+    blockchainIntegrity?: {
+      isValid: boolean;
+      blockHashIsValid: boolean;
+      previousHashIsValid: boolean;
+      calculatedBlockHash: string;
+      storedBlockHash: string;
+      expectedPreviousHash: string;
+      actualPreviousHash: string;
+    };
+    chainIntegrity?: {
+      isChainValid: boolean;
+      firstBrokenIndex: number | null;
+      brokenAtIndex: number | null;
+      affectedFromIndex: number | null;
+      directBrokenBlockIndexes: number[];
+      affectedBlockIndexes: number[];
+      isBlockAffectedByChainBreak: boolean;
+    };
+  };
+};
+
+type UploadedVerificationResponse = {
+  status: string;
+  message: string;
+  verification?: {
+    result: string;
+    isKnown: boolean;
+    hasTrustedMatch?: boolean;
+    chainIntegrity?: {
+      isChainValid: boolean;
+      firstBrokenIndex: number | null;
+      affectedFromIndex: number | null;
+      matchingBlockIndexes: number[];
+      matchingBlocksAffectedByBreak: number[];
+    };
+  };
+};
+
+type BlockchainValidationResponse = {
+  status: string;
+  message: string;
+  validation?: {
+    isChainValid: boolean;
+    totalBlocks: number;
+    firstBrokenIndex?: number | null;
+    brokenAtIndex: number | null;
+    affectedFromIndex?: number | null;
+    directBrokenBlockIndexes?: number[];
+    affectedBlockIndexes?: number[];
+  };
 };
 
 @Component({
@@ -59,7 +129,21 @@ export class App {
   readonly authResponse = signal('');
   readonly uploadResponse = signal('');
   readonly documentResponse = signal('');
+  readonly verifyStoredResponse = signal('');
+  readonly verifyUploadResponse = signal('');
+  readonly verifyMessage = signal('');
+  readonly storedVerificationMessage = signal('');
+  readonly lastStoredVerificationDocumentId = signal('');
+  readonly storedDocumentCheckOk = signal<boolean | null>(null);
+  readonly storedBlockchainCheckOk = signal<boolean | null>(null);
+  readonly storedWholeChainCheckOk = signal<boolean | null>(null);
+  readonly storedChainBreakMessage = signal('');
   readonly blockchainResponse = signal('');
+  readonly chainValidationResponse = signal('');
+  readonly chainValidationMessage = signal('');
+  readonly chainBreakDetails = signal('');
+  readonly chainValidationOk = signal<boolean | null>(null);
+  readonly devResponse = signal('');
   readonly error = signal('');
 
   readonly currentUser = signal<AuthUser | null>(this.loadStoredUser());
@@ -148,9 +232,7 @@ export class App {
   }
 
   getProfile(): void {
-    const token = this.token();
-
-    if (!token) {
+    if (!this.token()) {
       this.error.set('You need to login first.');
       return;
     }
@@ -160,7 +242,9 @@ export class App {
     this.error.set('');
 
     this.http
-      .get<AuthResponse>(`${this.apiUrl}/api/auth/me`, { headers: this.authHeaders() })
+      .get<AuthResponse>(`${this.apiUrl}/api/auth/me`, {
+        headers: this.authHeaders(),
+      })
       .subscribe({
         next: (response) => {
           if (response.user) {
@@ -179,10 +263,8 @@ export class App {
       });
   }
 
-  uploadDocument(files: FileList | null, isPublic: boolean): void {
-    const token = this.token();
-
-    if (!token) {
+  uploadDocument(files: FileList | null): void {
+    if (!this.token()) {
       this.error.set('You need to login before uploading a document.');
       return;
     }
@@ -194,14 +276,15 @@ export class App {
 
     const formData = new FormData();
     formData.append('document', files[0]);
-    formData.append('isPublic', String(isPublic));
 
     this.loading.set(true);
     this.uploadResponse.set('');
     this.error.set('');
 
     this.http
-      .post(`${this.apiUrl}/api/documents/upload`, formData, { headers: this.authHeaders() })
+      .post(`${this.apiUrl}/api/documents/upload`, formData, {
+        headers: this.authHeaders(),
+      })
       .subscribe({
         next: (response) => {
           this.uploadResponse.set(JSON.stringify(response, null, 2));
@@ -219,9 +302,7 @@ export class App {
   }
 
   loadMyDocuments(): void {
-    const token = this.token();
-
-    if (!token) {
+    if (!this.token()) {
       this.myDocuments.set([]);
       return;
     }
@@ -243,7 +324,9 @@ export class App {
   }
 
   loadPublicDocuments(): void {
-    this.http.get<DocumentListResponse>(`${this.apiUrl}/api/documents/public`).subscribe({
+    const options = this.token() ? { headers: this.authHeaders() } : {};
+
+    this.http.get<DocumentListResponse>(`${this.apiUrl}/api/documents/public`, options).subscribe({
       next: (response) => {
         this.publicDocuments.set(response.documents);
       },
@@ -254,21 +337,9 @@ export class App {
     });
   }
 
-  loadBlockchain(): void {
-    this.http.get(`${this.apiUrl}/api/blockchain`).subscribe({
-      next: (response) => {
-        this.blockchainResponse.set(JSON.stringify(response, null, 2));
-      },
-      error: (err) => {
-        console.error(err);
-        this.error.set(err.error?.message || 'Failed to load blockchain explorer.');
-      },
-    });
-  }
-
-  setDocumentVisibility(documentId: string, isPublic: boolean): void {
+  toggleDocumentVisibility(document: DocumentSummary): void {
     if (!this.token()) {
-      this.error.set('You need to login first.');
+      this.error.set('Login is required to change document visibility.');
       return;
     }
 
@@ -276,11 +347,9 @@ export class App {
     this.error.set('');
 
     this.http
-      .patch(
-        `${this.apiUrl}/api/documents/${documentId}/visibility`,
-        { isPublic },
-        { headers: this.authHeaders() },
-      )
+      .patch<
+        DocumentListResponse | { status: string; message: string; document: DocumentSummary }
+      >(`${this.apiUrl}/api/documents/${document.id}/visibility`, { isPublic: !document.isPublic }, { headers: this.authHeaders() })
       .subscribe({
         next: (response) => {
           this.documentResponse.set(JSON.stringify(response, null, 2));
@@ -291,41 +360,280 @@ export class App {
         },
         error: (err) => {
           console.error(err);
-          this.error.set(err.error?.message || 'Failed to update document visibility.');
+          this.error.set(err.error?.message || 'Failed to change document visibility.');
+          this.loading.set(false);
+        },
+      });
+  }
+
+  loadBlockchain(): void {
+    if (!this.token()) {
+      this.error.set('Login is required to load blockchain explorer.');
+      return;
+    }
+
+    this.http
+      .get(`${this.apiUrl}/api/blockchain`, {
+        headers: this.authHeaders(),
+      })
+      .subscribe({
+        next: (response) => {
+          this.blockchainResponse.set(JSON.stringify(response, null, 2));
+        },
+        error: (err) => {
+          console.error(err);
+          this.error.set(err.error?.message || 'Failed to load blockchain explorer.');
+        },
+      });
+  }
+
+  validateBlockchain(): void {
+    if (!this.token()) {
+      this.error.set('Login is required to validate the blockchain.');
+      return;
+    }
+
+    this.loading.set(true);
+    this.chainValidationResponse.set('');
+    this.chainValidationMessage.set('');
+    this.chainBreakDetails.set('');
+    this.chainValidationOk.set(null);
+    this.devResponse.set('');
+    this.error.set('');
+
+    this.http
+      .get<BlockchainValidationResponse>(`${this.apiUrl}/api/blockchain/validate`, {
+        headers: this.authHeaders(),
+      })
+      .subscribe({
+        next: (response) => {
+          const isChainValid = response.validation?.isChainValid ?? false;
+          const brokenAtIndex = response.validation?.brokenAtIndex ?? null;
+          const affectedFromIndex = response.validation?.affectedFromIndex ?? brokenAtIndex;
+          const directBroken = response.validation?.directBrokenBlockIndexes ?? [];
+          const affectedBlocks = response.validation?.affectedBlockIndexes ?? [];
+
+          this.chainValidationOk.set(isChainValid);
+          this.chainValidationMessage.set(
+            isChainValid
+              ? 'Blockchain lanac je valjan. Ova provjera čita samo block zapise, ne fileove.'
+              : `Blockchain lanac je pukao na bloku #${brokenAtIndex}. Blokovi od #${affectedFromIndex} nadalje nisu potpuno pouzdani.`,
+          );
+          this.chainBreakDetails.set(
+            isChainValid
+              ? ''
+              : `Direktno neispravni blokovi: ${this.formatBlockIndexes(directBroken)}. Zahvaćeni blokovi: ${this.formatBlockIndexes(affectedBlocks)}.`,
+          );
+          this.chainValidationResponse.set(JSON.stringify(response, null, 2));
+          this.loading.set(false);
+        },
+        error: (err) => {
+          console.error(err);
+          this.error.set(err.error?.message || 'Blockchain validation failed.');
           this.loading.set(false);
         },
       });
   }
 
   downloadDocument(document: DocumentSummary): void {
-    const token = this.token();
-    const headers = token
-      ? new HttpHeaders({
-          Authorization: `Bearer ${token}`,
-        })
-      : undefined;
+    if (!document.isPublic && !this.token()) {
+      this.error.set('Login is required to download private documents.');
+      return;
+    }
 
     this.loading.set(true);
     this.error.set('');
 
+    const options = this.token()
+      ? { headers: this.authHeaders(), responseType: 'blob' as const }
+      : { responseType: 'blob' as const };
+
+    this.http.get(`${this.apiUrl}/api/documents/${document.id}/download`, options).subscribe({
+      next: (blob) => {
+        this.saveBlob(blob, document.originalName);
+        this.loading.set(false);
+      },
+      error: (err) => {
+        console.error(err);
+        this.error.set(
+          err.error?.message ||
+            'Download failed. Private documents can be downloaded only by owner.',
+        );
+        this.loading.set(false);
+      },
+    });
+  }
+
+  verifyStoredDocument(document: DocumentSummary): void {
+    if (!this.token()) {
+      this.error.set('Login is required to verify stored documents.');
+      return;
+    }
+
+    this.loading.set(true);
+    this.verifyStoredResponse.set('');
+    this.verifyMessage.set('');
+    this.storedVerificationMessage.set('');
+    this.lastStoredVerificationDocumentId.set(document.id);
+    this.storedDocumentCheckOk.set(null);
+    this.storedBlockchainCheckOk.set(null);
+    this.storedWholeChainCheckOk.set(null);
+    this.storedChainBreakMessage.set('');
+    this.error.set('');
+
     this.http
-      .get(`${this.apiUrl}/api/documents/${document.id}/download`, {
-        headers,
-        responseType: 'blob',
-      })
+      .post<StoredVerificationResponse>(
+        `${this.apiUrl}/api/documents/${document.id}/verify`,
+        {},
+        { headers: this.authHeaders() },
+      )
       .subscribe({
-        next: (blob) => {
-          this.saveBlob(blob, document.originalName);
+        next: (response) => {
+          const documentOk = response.verification?.documentIntegrity?.isValid ?? false;
+          const blockchainOk = response.verification?.blockchainIntegrity?.isValid ?? false;
+          const wholeChainOk = response.verification?.chainIntegrity?.isChainValid ?? false;
+          const firstBrokenIndex = response.verification?.chainIntegrity?.firstBrokenIndex ?? null;
+          const affectedFromIndex =
+            response.verification?.chainIntegrity?.affectedFromIndex ?? null;
+          const isAuthentic = response.verification?.isAuthentic ?? false;
+          let message =
+            'Dokument je izmijenjen ili oštećen: trenutni hash ne odgovara Document/Block hashu.';
+
+          if (isAuthentic) {
+            message =
+              'Dokument je autentičan: hash dokumenta odgovara blockchain zapisu i cijeli lanac je valjan.';
+          } else if (documentOk && blockchainOk && !wholeChainOk) {
+            message = `Hash dokumenta i njegov blok izgledaju OK, ali cijeli blockchain lanac je pukao na bloku #${firstBrokenIndex}.`;
+          } else if (documentOk && !blockchainOk) {
+            message =
+              'Hash dokumenta je ispravan, ali hash bloka ili direct previousHash veza nije valjana.';
+          }
+
+          this.storedDocumentCheckOk.set(documentOk);
+          this.storedBlockchainCheckOk.set(blockchainOk);
+          this.storedWholeChainCheckOk.set(wholeChainOk);
+          this.storedChainBreakMessage.set(
+            wholeChainOk
+              ? ''
+              : `Lanac je pukao na bloku #${firstBrokenIndex}; blokovi od #${affectedFromIndex} nadalje nisu potpuno pouzdani.`,
+          );
+          this.storedVerificationMessage.set(message);
+          this.verifyMessage.set(message);
+          this.verifyStoredResponse.set(JSON.stringify(response, null, 2));
           this.loading.set(false);
         },
         error: (err) => {
           console.error(err);
-          this.error.set(
-            'Download failed. Private documents can be downloaded only by their owner.',
-          );
+          this.error.set(err.error?.message || 'Stored document verification failed.');
           this.loading.set(false);
         },
       });
+  }
+
+  verifyUploadedDocument(files: FileList | null): void {
+    if (!this.token()) {
+      this.error.set('Login is required to verify uploaded files.');
+      return;
+    }
+
+    if (!files || files.length === 0) {
+      this.error.set('Choose a document for verification first.');
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('document', files[0]);
+
+    this.loading.set(true);
+    this.verifyUploadResponse.set('');
+    this.verifyMessage.set('');
+    this.error.set('');
+
+    this.http
+      .post<UploadedVerificationResponse>(
+        `${this.apiUrl}/api/documents/verify-uploaded`,
+        formData,
+        { headers: this.authHeaders() },
+      )
+      .subscribe({
+        next: (response) => {
+          const isKnown = response.verification?.isKnown ?? false;
+          const chainOk = response.verification?.chainIntegrity?.isChainValid ?? true;
+          const firstBrokenIndex = response.verification?.chainIntegrity?.firstBrokenIndex ?? null;
+          const affectedMatches =
+            response.verification?.chainIntegrity?.matchingBlocksAffectedByBreak ?? [];
+
+          if (!isKnown) {
+            this.verifyMessage.set('Dokument je nepoznat ili izmijenjen.');
+          } else if (chainOk) {
+            this.verifyMessage.set(
+              'Dokument postoji u valjanoj blockchain evidenciji kojoj imaš pristup.',
+            );
+          } else if (affectedMatches.length > 0) {
+            this.verifyMessage.set(
+              `Hash dokumenta postoji u dostupnim zapisima, ali lanac je pukao na bloku #${firstBrokenIndex}, prije ili na pronađenom zapisu.`,
+            );
+          } else {
+            this.verifyMessage.set(
+              `Hash dokumenta postoji u dostupnim zapisima, ali cijeli blockchain lanac nije valjan. Prvi problem je na bloku #${firstBrokenIndex}.`,
+            );
+          }
+          this.verifyUploadResponse.set(JSON.stringify(response, null, 2));
+          this.loading.set(false);
+        },
+        error: (err) => {
+          console.error(err);
+          this.error.set(err.error?.message || 'Uploaded document verification failed.');
+          this.loading.set(false);
+        },
+      });
+  }
+
+  resetTestData(): void {
+    const confirmed = window.confirm(
+      'This deletes all documents, stored files, and blockchain blocks from the local development database. Users stay saved. Continue?',
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    this.loading.set(true);
+    this.devResponse.set('');
+    this.error.set('');
+
+    this.http.post(`${this.apiUrl}/api/dev/reset-documents-blocks`, {}).subscribe({
+      next: (response) => {
+        this.devResponse.set(JSON.stringify(response, null, 2));
+        this.myDocuments.set([]);
+        this.publicDocuments.set([]);
+        this.uploadResponse.set('');
+        this.documentResponse.set('');
+        this.verifyStoredResponse.set('');
+        this.verifyUploadResponse.set('');
+        this.verifyMessage.set('');
+        this.storedVerificationMessage.set('');
+        this.lastStoredVerificationDocumentId.set('');
+        this.storedDocumentCheckOk.set(null);
+        this.storedBlockchainCheckOk.set(null);
+        this.storedWholeChainCheckOk.set(null);
+        this.storedChainBreakMessage.set('');
+        this.blockchainResponse.set('');
+        this.chainValidationResponse.set('');
+        this.chainValidationMessage.set('');
+        this.chainBreakDetails.set('');
+        this.chainValidationOk.set(null);
+        this.loading.set(false);
+      },
+      error: (err) => {
+        console.error(err);
+        this.error.set(
+          err.error?.message ||
+            'Development reset failed. This route works only in NODE_ENV=development.',
+        );
+        this.loading.set(false);
+      },
+    });
   }
 
   logout(): void {
@@ -334,9 +642,24 @@ export class App {
     this.token.set(null);
     this.currentUser.set(null);
     this.myDocuments.set([]);
+    this.loadPublicDocuments();
     this.authResponse.set('Logged out.');
     this.uploadResponse.set('');
     this.documentResponse.set('');
+    this.verifyStoredResponse.set('');
+    this.verifyUploadResponse.set('');
+    this.verifyMessage.set('');
+    this.storedVerificationMessage.set('');
+    this.lastStoredVerificationDocumentId.set('');
+    this.storedDocumentCheckOk.set(null);
+    this.storedBlockchainCheckOk.set(null);
+    this.storedWholeChainCheckOk.set(null);
+    this.storedChainBreakMessage.set('');
+    this.chainValidationResponse.set('');
+    this.chainValidationMessage.set('');
+    this.chainBreakDetails.set('');
+    this.chainValidationOk.set(null);
+    this.devResponse.set('');
     this.error.set('');
   }
 
@@ -352,8 +675,16 @@ export class App {
     return `${(size / (1024 * 1024)).toFixed(1)} MB`;
   }
 
-  shortHash(hash: string): string {
+  shortHash(hash: string | undefined): string {
+    if (!hash) {
+      return 'missing';
+    }
+
     return `${hash.slice(0, 12)}...${hash.slice(-8)}`;
+  }
+
+  private formatBlockIndexes(indexes: number[]): string {
+    return indexes.length ? indexes.map((index) => `#${index}`).join(', ') : 'none';
   }
 
   private handleAuthSuccess(response: AuthResponse): void {

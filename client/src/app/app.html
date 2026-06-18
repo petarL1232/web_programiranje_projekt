@@ -3,8 +3,8 @@
     <h1>Web programiranje projekt</h1>
     <h2>DocumentChain</h2>
     <p>
-      Web aplikacija za pohranu dokumenata, download dokumenata i provjeru autentičnosti pomoću
-      SHA-256 hasha i blockchain-style evidencije zapisa.
+      Web aplikacija za sigurnu pohranu dokumenata, download i provjeru autentičnosti pomoću SHA-256
+      hasha i blockchain-style evidencije zapisa.
     </p>
 
     <div class="actions">
@@ -15,21 +15,12 @@
       <button type="button" (click)="testModels()" [disabled]="loading()">
         Test database models
       </button>
-
-      <button
-        type="button"
-        (click)="loadPublicDocuments(); loadBlockchain()"
-        [disabled]="loading()"
-      >
-        Refresh public data
-      </button>
     </div>
 
     @if (backendResponse()) {
       <h3>Backend health</h3>
       <pre>{{ backendResponse() }}</pre>
     }
-
     @if (modelResponse()) {
       <h3>Model status</h3>
       <pre>{{ modelResponse() }}</pre>
@@ -92,6 +83,9 @@
       <button type="button" (click)="loadMyDocuments()" [disabled]="loading() || !token()">
         Load my documents
       </button>
+      <button type="button" (click)="loadPublicDocuments()" [disabled]="loading()">
+        Load public documents
+      </button>
       <button type="button" class="secondary" (click)="logout()" [disabled]="!token()">
         Logout
       </button>
@@ -106,25 +100,27 @@
   <section class="card">
     <h2>Upload document</h2>
     <p>
-      Upload računa SHA-256 hash dokumenta, sprema dokument u MongoDB i kreira novi blockchain blok
-      koji pokazuje na prethodni blok. Dokument može ostati privatan ili biti javan za download.
+      Upload je JWT protected. Backend validira veličinu i tip filea, sprema dokument u private
+      server folder, računa SHA-256 hash i kreira blockchain blok.
+    </p>
+    <p class="small-note">
+      Allowed: PDF, TXT, DOC, DOCX, PNG, JPG/JPEG. Max size: 10 MB. Dokumenti nisu u public folderu.
+      Public dokumenti se i dalje skidaju samo kroz backend download rutu, nikad direktnim file
+      URL-om.
     </p>
 
     @if (!token()) {
       <div class="status-box warning">Login je potreban prije uploada dokumenta.</div>
     }
 
-    <form
-      class="upload-form"
-      (submit)="$event.preventDefault(); uploadDocument(uploadFile.files, uploadIsPublic.checked)"
-    >
+    <form class="upload-form" (submit)="$event.preventDefault(); uploadDocument(uploadFile.files)">
       <label for="uploadFile">Document file</label>
-      <input id="uploadFile" #uploadFile type="file" />
-
-      <label class="checkbox-row" for="uploadIsPublic">
-        <input id="uploadIsPublic" #uploadIsPublic type="checkbox" />
-        Make this document public
-      </label>
+      <input
+        id="uploadFile"
+        #uploadFile
+        type="file"
+        accept=".pdf,.txt,.doc,.docx,.png,.jpg,.jpeg"
+      />
 
       <button type="submit" [disabled]="loading() || !token()">
         Upload document and create block
@@ -140,8 +136,8 @@
   <section class="card">
     <h2>My documents</h2>
     <p>
-      Ovdje loginani korisnik vidi svoje dokumente. Privatni dokument može downloadati samo vlasnik.
-      Ako ga vlasnik označi kao public, svi ga mogu downloadati iz public liste.
+      Ovdje loginani korisnik vidi svoje dokumente. Private dokument može downloadati samo vlasnik.
+      Public dokument može downloadati bilo tko, ali i dalje samo kroz backend rutu.
     </p>
 
     <div class="actions">
@@ -153,7 +149,6 @@
     @if (!token()) {
       <div class="status-box warning">Login je potreban za pregled vlastitih dokumenata.</div>
     }
-
     @if (myDocuments().length === 0 && token()) {
       <div class="status-box">Još nemaš uploadanih dokumenata.</div>
     }
@@ -169,13 +164,16 @@
           </div>
 
           <p><strong>Size:</strong> {{ formatBytes(document.size) }}</p>
+          <p><strong>Type:</strong> {{ document.mimeType }}</p>
           <p>
-            <strong>File hash:</strong> <code>{{ shortHash(document.fileHash) }}</code>
+            <strong>Document hash:</strong>
+            <code>{{ shortHash(document.documentHash || document.fileHash) }}</code>
           </p>
           @if (document.block) {
             <p><strong>Block:</strong> #{{ document.block.index }}</p>
             <p>
-              <strong>Block hash:</strong> <code>{{ shortHash(document.block.hash) }}</code>
+              <strong>Block hash:</strong>
+              <code>{{ shortHash(document.block.hash) }}</code>
             </p>
           }
 
@@ -184,26 +182,54 @@
               Download
             </button>
 
-            @if (document.isPublic) {
-              <button
-                type="button"
-                class="secondary"
-                (click)="setDocumentVisibility(document.id, false)"
-                [disabled]="loading()"
-              >
-                Make private
-              </button>
-            } @else {
-              <button
-                type="button"
-                class="secondary"
-                (click)="setDocumentVisibility(document.id, true)"
-                [disabled]="loading()"
-              >
-                Make public
-              </button>
-            }
+            <button
+              type="button"
+              class="secondary"
+              (click)="verifyStoredDocument(document)"
+              [disabled]="loading()"
+            >
+              Verify stored
+            </button>
+
+            <button
+              type="button"
+              class="secondary"
+              (click)="toggleDocumentVisibility(document)"
+              [disabled]="loading()"
+            >
+              {{ document.isPublic ? 'Make private' : 'Make public' }}
+            </button>
           </div>
+
+          @if (lastStoredVerificationDocumentId() === document.id && storedVerificationMessage()) {
+            <div
+              class="status-box"
+              [class.success]="
+                storedDocumentCheckOk() === true &&
+                storedBlockchainCheckOk() === true &&
+                storedWholeChainCheckOk() === true
+              "
+              [class.warning]="
+                storedDocumentCheckOk() === false ||
+                storedBlockchainCheckOk() === false ||
+                storedWholeChainCheckOk() === false
+              "
+            >
+              <strong>Stored verification:</strong> {{ storedVerificationMessage() }}
+              <ul class="check-list">
+                <li>Document hash check: {{ storedDocumentCheckOk() ? 'OK' : 'FAILED' }}</li>
+                <li>
+                  Block hash/direct link check: {{ storedBlockchainCheckOk() ? 'OK' : 'FAILED' }}
+                </li>
+                <li>
+                  Whole blockchain chain check: {{ storedWholeChainCheckOk() ? 'OK' : 'FAILED' }}
+                </li>
+              </ul>
+              @if (storedChainBreakMessage()) {
+                <p class="chain-warning">{{ storedChainBreakMessage() }}</p>
+              }
+            </div>
+          }
         </article>
       }
     </div>
@@ -216,7 +242,11 @@
 
   <section class="card">
     <h2>Public documents</h2>
-    <p>Svi korisnici mogu vidjeti i downloadati dokumente koje je vlasnik označio kao public.</p>
+    <p>
+      Ovdje se vide dokumenti koje su korisnici označili kao public. Public znači da je download
+      dopušten svima, ali dokument se i dalje ne servira iz public foldera nego kroz backend rutu s
+      validacijom i sigurnim headerima.
+    </p>
 
     <div class="actions">
       <button type="button" (click)="loadPublicDocuments()" [disabled]="loading()">
@@ -237,39 +267,130 @@
           </div>
 
           <p><strong>Size:</strong> {{ formatBytes(document.size) }}</p>
+          <p><strong>Type:</strong> {{ document.mimeType }}</p>
           <p>
-            <strong>File hash:</strong> <code>{{ shortHash(document.fileHash) }}</code>
+            <strong>Document hash:</strong>
+            <code>{{ shortHash(document.documentHash || document.fileHash) }}</code>
           </p>
           @if (document.block) {
             <p><strong>Block:</strong> #{{ document.block.index }}</p>
+            <p>
+              <strong>Block hash:</strong>
+              <code>{{ shortHash(document.block.hash) }}</code>
+            </p>
           }
 
-          <button type="button" (click)="downloadDocument(document)" [disabled]="loading()">
-            Download public document
-          </button>
+          <div class="actions compact">
+            <button type="button" (click)="downloadDocument(document)" [disabled]="loading()">
+              Download public file
+            </button>
+          </div>
         </article>
       }
     </div>
   </section>
 
   <section class="card">
+    <h2>Verify uploaded file</h2>
+    <p>
+      Ova provjera ne sprema file trajno. Backend samo izračuna SHA-256 hash i traži postoji li isti
+      hash u tvojim dokumentima ili u public dokumentima.
+    </p>
+
+    <form
+      class="upload-form"
+      (submit)="$event.preventDefault(); verifyUploadedDocument(verifyFile.files)"
+    >
+      <label for="verifyFile">Document file for verification</label>
+      <input
+        id="verifyFile"
+        #verifyFile
+        type="file"
+        accept=".pdf,.txt,.doc,.docx,.png,.jpg,.jpeg"
+      />
+
+      <button type="submit" [disabled]="loading() || !token()">Verify uploaded file</button>
+    </form>
+
+    @if (verifyMessage()) {
+      <div
+        class="status-box"
+        [class.success]="
+          verifyMessage().includes('autentičan') || verifyMessage().includes('pripada')
+        "
+        [class.warning]="
+          verifyMessage().includes('izmijenjen') || verifyMessage().includes('nepoznat')
+        "
+      >
+        {{ verifyMessage() }}
+      </div>
+    }
+    @if (verifyStoredResponse()) {
+      <h3>Stored document verification</h3>
+      <pre>{{ verifyStoredResponse() }}</pre>
+    }
+    @if (verifyUploadResponse()) {
+      <h3>Uploaded document verification</h3>
+      <pre>{{ verifyUploadResponse() }}</pre>
+    }
+  </section>
+
+  <section class="card">
     <h2>Blockchain Explorer</h2>
     <p>
-      Explorer prikazuje cijeli blockchain-style audit log: redni broj bloka, hash dokumenta,
-      previousHash, hash bloka i rezultat osnovne validacije lanca. Privatni dokumenti nisu javno
-      download dostupni, ali njihov blok ostaje dio lanca zapisa.
+      Explorer prikazuje blockchain-style audit log. Validate whole chain provjerava samo block
+      zapise: recalculated block hash, index order i previousHash veze. Ne čita i ne šalje fileove.
     </p>
 
     <div class="actions">
-      <button type="button" (click)="loadBlockchain()" [disabled]="loading()">
+      <button type="button" (click)="loadBlockchain()" [disabled]="loading() || !token()">
         Load blockchain explorer
+      </button>
+      <button
+        type="button"
+        class="secondary"
+        (click)="validateBlockchain()"
+        [disabled]="loading() || !token()"
+      >
+        Validate whole chain
       </button>
     </div>
 
+    @if (chainValidationMessage()) {
+      <div
+        class="status-box"
+        [class.success]="chainValidationOk() === true"
+        [class.warning]="chainValidationOk() === false"
+      >
+        {{ chainValidationMessage() }}
+        @if (chainBreakDetails()) {
+          <p class="chain-warning">{{ chainBreakDetails() }}</p>
+        }
+      </div>
+    }
+    @if (chainValidationResponse()) {
+      <h3>Blockchain validation response</h3>
+      <pre>{{ chainValidationResponse() }}</pre>
+    }
     @if (blockchainResponse()) {
       <h3>Blockchain response</h3>
       <pre>{{ blockchainResponse() }}</pre>
     }
+
+    <div class="dev-tools">
+      <h3>Development test tools</h3>
+      <p>
+        Privremeno za lokalno testiranje: briše dokumente, private stored fileove i blokove, ali
+        ostavlja korisnike. Backend dozvoljava ovu rutu samo kada je
+        <code>NODE_ENV=development</code>.
+      </p>
+      <button type="button" class="danger" (click)="resetTestData()" [disabled]="loading()">
+        Reset documents and blockchain blocks
+      </button>
+      @if (devResponse()) {
+        <pre>{{ devResponse() }}</pre>
+      }
+    </div>
 
     @if (error()) {
       <p class="error">{{ error() }}</p>

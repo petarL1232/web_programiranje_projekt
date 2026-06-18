@@ -8,6 +8,12 @@ const documentSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
+    owner: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+      index: true,
+    },
     originalName: {
       type: String,
       required: true,
@@ -27,6 +33,11 @@ const documentSchema = new mongoose.Schema(
       required: true,
       min: 0,
     },
+    documentHash: {
+      type: String,
+      required: true,
+      index: true,
+    },
     fileHash: {
       type: String,
       required: true,
@@ -40,7 +51,7 @@ const documentSchema = new mongoose.Schema(
     storageType: {
       type: String,
       enum: ['mongodb', 'filesystem'],
-      default: 'mongodb',
+      default: 'filesystem',
     },
     fileData: {
       type: Buffer,
@@ -56,5 +67,25 @@ const documentSchema = new mongoose.Schema(
     timestamps: true,
   }
 );
+
+documentSchema.pre('validate', function syncCompatibilityFields(next) {
+  if (!this.owner && this.userId) {
+    this.owner = this.userId;
+  }
+
+  if (!this.userId && this.owner) {
+    this.userId = this.owner;
+  }
+
+  if (!this.documentHash && this.fileHash) {
+    this.documentHash = this.fileHash;
+  }
+
+  if (!this.fileHash && this.documentHash) {
+    this.fileHash = this.documentHash;
+  }
+
+  next();
+});
 
 module.exports = mongoose.model('Document', documentSchema);

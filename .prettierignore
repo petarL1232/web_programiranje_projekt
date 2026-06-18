@@ -10,6 +10,7 @@ client/out-tsc/
 server/dist/
 server/logs/
 server/uploads/
+server/storage/
 
 coverage/
 .nyc_output/

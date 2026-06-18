@@ -1,88 +1,51 @@
 const express = require('express');
 
-const Block = require('../models/Block');
-const { calculateBlockHash } = require('../utils/blockchain');
+const { authenticate } = require('../middleware/auth.middleware');
+const { loadValidatedBlockchain } = require('../utils/chainValidation');
 
 const router = express.Router();
 
-const getDocumentForExplorer = (document) => {
-  if (!document) {
-    return null;
-  }
-
-  return {
-    id: document._id.toString(),
-    originalName: document.isPublic ? document.originalName : 'Private document',
-    isPublic: Boolean(document.isPublic),
-  };
-};
-
-const getDocumentIdForHash = (documentId) => {
-  if (documentId && documentId._id) {
-    return documentId._id;
-  }
-
-  return documentId;
-};
-
-const toExplorerBlock = (block, expectedPreviousHash) => {
-  const calculatedHash = calculateBlockHash({
-    index: block.index,
-    documentId: getDocumentIdForHash(block.documentId),
-    fileHash: block.fileHash,
-    previousHash: block.previousHash,
-    createdAt: block.createdAt,
-    nonce: block.nonce,
-  });
-
-  const isHashValid = calculatedHash === block.hash;
-  const isPreviousHashValid = block.previousHash === expectedPreviousHash;
-
-  return {
-    id: block._id.toString(),
-    index: block.index,
-    document: getDocumentForExplorer(block.documentId),
-    documentId: getDocumentIdForHash(block.documentId).toString(),
-    fileHash: block.fileHash,
-    previousHash: block.previousHash,
-    hash: block.hash,
-    calculatedHash,
-    nonce: block.nonce,
-    createdAt: block.createdAt,
-    validation: {
-      isHashValid,
-      isPreviousHashValid,
-      isBlockValid: isHashValid && isPreviousHashValid,
-    },
-  };
-};
-
-router.get('/', async (_request, response, next) => {
+router.get('/', authenticate, async (request, response, next) => {
   try {
-    const blocks = await Block.find().sort({ index: 1 }).populate({
-      path: 'documentId',
-      select: 'originalName isPublic',
+    const { summary, blocks } = await loadValidatedBlockchain({
+      includeDocuments: true,
+      requestUser: request.user,
     });
-
-    let previousHash = 'GENESIS';
-    const explorerBlocks = blocks.map((block) => {
-      const explorerBlock = toExplorerBlock(block, previousHash);
-      previousHash = block.hash;
-      return explorerBlock;
-    });
-
-    const isChainValid = explorerBlocks.every((block) => block.validation.isBlockValid);
-    const lastBlock = explorerBlocks.at(-1) || null;
 
     return response.json({
       status: 'ok',
-      message: 'Blockchain explorer loaded',
-      summary: {
-        totalBlocks: explorerBlocks.length,
-        isChainValid,
-        lastBlockHash: lastBlock ? lastBlock.hash : null,
+      message: summary.isChainValid
+        ? 'Blockchain explorer loaded and chain is valid'
+        : `Blockchain explorer loaded. Chain is broken from block #${summary.firstBrokenIndex}`,
+      summary,
+      blocks,
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.get('/validate', authenticate, async (_request, response, next) => {
+  try {
+    const { summary } = await loadValidatedBlockchain({ includeDocuments: false });
+
+    return response.json({
+      status: 'ok',
+      message: summary.isChainValid
+        ? 'Blockchain chain is valid'
+        : `Blockchain chain is broken from block #${summary.firstBrokenIndex}`,
+      validation: {
+        isChainValid: summary.isChainValid,
+        totalBlocks: summary.totalBlocks,
+        firstBrokenIndex: summary.firstBrokenIndex,
+        brokenAtIndex: summary.brokenAtIndex,
+        affectedFromIndex: summary.affectedFromIndex,
+        directBrokenBlockIndexes: summary.directBrokenBlockIndexes,
+        affectedBlockIndexes: summary.affectedBlockIndexes,
+        lastBlockHash: summary.lastBlockHash,
+        explanation:
+          'This validates only blockchain block records. It does not read, send, download, or hash stored document files.',
       },
-      blocks: explorerBlocks,
     });
   } catch (error) {
     return next(error);

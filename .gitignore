@@ -28,6 +28,8 @@ client/.env
 
 # Uploaded files - do not commit user documents
 server/uploads/
+server/storage/*
+!server/storage/.gitkeep
 
 # Test coverage
 coverage/

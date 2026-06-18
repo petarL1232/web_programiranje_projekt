@@ -14,6 +14,17 @@ const blockSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
+    owner: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+      index: true,
+    },
+    documentHash: {
+      type: String,
+      required: true,
+      index: true,
+    },
     fileHash: {
       type: String,
       required: true,

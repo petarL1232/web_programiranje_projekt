@@ -35,10 +35,12 @@ router.get('/status', (_request, response) => {
         collection: Document.collection.name,
         fields: [
           'userId',
+          'owner',
           'originalName',
           'storedName',
           'mimeType',
           'size',
+          'documentHash',
           'fileHash',
           'isPublic',
           'storageType',
@@ -53,6 +55,8 @@ router.get('/status', (_request, response) => {
         fields: [
           'index',
           'documentId',
+          'owner',
+          'documentHash',
           'fileHash',
           'previousHash',
           'hash',

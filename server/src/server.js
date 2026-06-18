@@ -1,13 +1,17 @@
 const cors = require('cors');
 const dotenv = require('dotenv');
 const express = require('express');
+const rateLimit = require('express-rate-limit');
+const helmet = require('helmet');
 const mongoose = require('mongoose');
 
 const authRoutes = require('./routes/auth.routes');
 const blockchainRoutes = require('./routes/blockchain.routes');
+const devRoutes = require('./routes/dev.routes');
 const documentRoutes = require('./routes/document.routes');
 const modelStatusRoutes = require('./routes/modelStatus.routes');
 
+// Load .env before reading process.env values.
 dotenv.config();
 
 const app = express();
@@ -16,11 +20,24 @@ const clientUrl = process.env.CLIENT_URL || 'http://localhost:4200';
 const mongoUri = process.env.MONGO_URI;
 
 app.use(
+  helmet({
+    crossOriginResourcePolicy: false,
+  })
+);
+app.use(
   cors({
     origin: clientUrl,
   })
 );
-app.use(express.json());
+app.use(
+  rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 300,
+    standardHeaders: true,
+    legacyHeaders: false,
+  })
+);
+app.use(express.json({ limit: '1mb' }));
 
 const getDatabaseStatus = () => {
   const statusMap = {
@@ -49,6 +66,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/models', modelStatusRoutes);
 app.use('/api/documents', documentRoutes);
 app.use('/api/blockchain', blockchainRoutes);
+app.use('/api/dev', devRoutes);
 
 app.use((request, response) => {
   response.status(404).json({
@@ -63,13 +81,19 @@ app.use((error, _request, response, _next) => {
   if (error.code === 'LIMIT_FILE_SIZE') {
     return response.status(413).json({
       status: 'error',
-      message: 'File is too large. Maximum allowed size is 5 MB.',
+      message: 'File is too large. Maximum allowed size is 10 MB.',
     });
   }
 
-  return response.status(error.status || 500).json({
+  const status = error.status || 500;
+  const message =
+    status >= 500 && process.env.NODE_ENV === 'production'
+      ? 'Internal server error'
+      : error.message || 'Internal server error';
+
+  return response.status(status).json({
     status: 'error',
-    message: error.message || 'Internal server error',
+    message,
   });
 });
 
