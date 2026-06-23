@@ -61,6 +61,17 @@ app.use(
 );
 app.use(express.json({ limit: '1mb' }));
 
+const authRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    status: 'error',
+    message: 'Too many login/register attempts. Please wait a few minutes and try again.',
+  },
+});
+
 const getDatabaseStatus = () => {
   const statusMap = {
     0: 'disconnected',
@@ -84,6 +95,8 @@ app.get('/api/health', (_request, response) => {
   });
 });
 
+app.use('/api/auth/login', authRateLimit);
+app.use('/api/auth/register', authRateLimit);
 app.use('/api/auth', authRoutes);
 app.use('/api/models', modelStatusRoutes);
 app.use('/api/documents', documentRoutes);

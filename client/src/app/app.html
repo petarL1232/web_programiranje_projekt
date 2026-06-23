@@ -184,6 +184,12 @@
           <summary>Upload receipt</summary>
           <pre>{{ uploadResponse() }}</pre>
         </details>
+
+        <div class="actions compact">
+          <button type="button" class="secondary" (click)="downloadUploadReceipt()">
+            Download receipt JSON
+          </button>
+        </div>
       }
     </section>
   }
@@ -343,7 +349,48 @@
               <button type="button" (click)="downloadDocument(document)" [disabled]="loading()">
                 Download public file
               </button>
+
+              <button
+                type="button"
+                class="secondary"
+                (click)="verifyStoredDocument(document)"
+                [disabled]="loading()"
+              >
+                Verify public file
+              </button>
             </div>
+
+            @if (
+              lastStoredVerificationDocumentId() === document.id && storedVerificationMessage()
+            ) {
+              <div
+                class="status-box"
+                [class.success]="
+                  storedDocumentCheckOk() === true &&
+                  storedBlockchainCheckOk() === true &&
+                  storedWholeChainCheckOk() === true
+                "
+                [class.warning]="
+                  storedDocumentCheckOk() === false ||
+                  storedBlockchainCheckOk() === false ||
+                  storedWholeChainCheckOk() === false
+                "
+              >
+                <strong>Public verification:</strong> {{ storedVerificationMessage() }}
+                <ul class="check-list">
+                  <li>Document hash check: {{ storedDocumentCheckOk() ? 'OK' : 'FAILED' }}</li>
+                  <li>
+                    Block hash/direct link check: {{ storedBlockchainCheckOk() ? 'OK' : 'FAILED' }}
+                  </li>
+                  <li>
+                    Whole blockchain chain check: {{ storedWholeChainCheckOk() ? 'OK' : 'FAILED' }}
+                  </li>
+                </ul>
+                @if (storedChainBreakMessage()) {
+                  <p class="chain-warning">{{ storedChainBreakMessage() }}</p>
+                }
+              </div>
+            }
           </article>
         }
       </div>

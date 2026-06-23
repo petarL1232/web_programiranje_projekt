@@ -17,6 +17,25 @@ type AuthResponse = {
   user?: AuthUser;
 };
 
+type UploadResponse = {
+  status?: string;
+  message?: string;
+  document?: {
+    id?: string;
+    originalName?: string;
+    size?: number;
+    mimeType?: string;
+    documentHash?: string;
+  };
+  receipt?: {
+    blockIndex?: number;
+    documentHash?: string;
+    blockHash?: string;
+    previousHash?: string;
+    timestamp?: string;
+  };
+};
+
 type DocumentBlockSummary = {
   id: string;
   index: number;
@@ -196,6 +215,8 @@ export class App implements OnInit, OnDestroy {
   readonly modelResponse = signal('');
   readonly authResponse = signal('');
   readonly uploadResponse = signal('');
+  readonly lastUploadReceiptJson = signal('');
+  readonly lastUploadReceiptFileName = signal('documentchain-upload-receipt.json');
   readonly documentResponse = signal('');
   readonly verifyStoredResponse = signal('');
   readonly verifyUploadResponse = signal('');
@@ -382,15 +403,21 @@ export class App implements OnInit, OnDestroy {
 
     this.loading.set(true);
     this.uploadResponse.set('');
+    this.lastUploadReceiptJson.set('');
+    this.lastUploadReceiptFileName.set('documentchain-upload-receipt.json');
     this.error.set('');
 
     this.http
-      .post(`${this.apiUrl}/api/documents/upload`, formData, {
+      .post<UploadResponse>(`${this.apiUrl}/api/documents/upload`, formData, {
         headers: this.authHeaders(),
       })
       .subscribe({
         next: (response) => {
-          this.uploadResponse.set(JSON.stringify(response, null, 2));
+          const receiptJson = JSON.stringify(response, null, 2);
+
+          this.uploadResponse.set(receiptJson);
+          this.lastUploadReceiptJson.set(receiptJson);
+          this.lastUploadReceiptFileName.set(this.buildReceiptFileName(response));
           this.loadMyDocuments();
           this.loadPublicDocuments();
           this.loadBlockchain();
@@ -402,6 +429,19 @@ export class App implements OnInit, OnDestroy {
           this.loading.set(false);
         },
       });
+  }
+
+  downloadUploadReceipt(): void {
+    if (!this.lastUploadReceiptJson()) {
+      this.error.set('No upload receipt is available yet. Upload a document first.');
+      return;
+    }
+
+    const blob = new Blob([this.lastUploadReceiptJson()], {
+      type: 'application/json;charset=utf-8',
+    });
+
+    this.saveBlob(blob, this.lastUploadReceiptFileName());
   }
 
   loadMyDocuments(): void {
@@ -444,6 +484,16 @@ export class App implements OnInit, OnDestroy {
     if (!this.token()) {
       this.error.set('Login is required to change document visibility.');
       return;
+    }
+
+    if (!document.isPublic) {
+      const confirmed = window.confirm(
+        `Make "${document.originalName}" public? Anyone will be able to see it in Public documents, verify it, and download it through the backend route.`,
+      );
+
+      if (!confirmed) {
+        return;
+      }
     }
 
     this.loading.set(true);
@@ -558,8 +608,8 @@ export class App implements OnInit, OnDestroy {
   }
 
   verifyStoredDocument(document: DocumentSummary): void {
-    if (!this.token()) {
-      this.error.set('Login is required to verify stored documents.');
+    if (!document.isPublic && !this.token()) {
+      this.error.set('Login is required to verify private documents.');
       return;
     }
 
@@ -574,11 +624,13 @@ export class App implements OnInit, OnDestroy {
     this.storedChainBreakMessage.set('');
     this.error.set('');
 
+    const options = this.token() ? { headers: this.authHeaders() } : {};
+
     this.http
       .post<StoredVerificationResponse>(
         `${this.apiUrl}/api/documents/${document.id}/verify`,
         {},
-        { headers: this.authHeaders() },
+        options,
       )
       .subscribe({
         next: (response) => {
@@ -701,6 +753,8 @@ export class App implements OnInit, OnDestroy {
         this.myDocuments.set([]);
         this.publicDocuments.set([]);
         this.uploadResponse.set('');
+        this.lastUploadReceiptJson.set('');
+        this.lastUploadReceiptFileName.set('documentchain-upload-receipt.json');
         this.documentResponse.set('');
         this.verifyStoredResponse.set('');
         this.verifyUploadResponse.set('');
@@ -740,6 +794,8 @@ export class App implements OnInit, OnDestroy {
     this.loadPublicDocuments();
     this.authResponse.set('Logged out.');
     this.uploadResponse.set('');
+    this.lastUploadReceiptJson.set('');
+    this.lastUploadReceiptFileName.set('documentchain-upload-receipt.json');
     this.documentResponse.set('');
     this.verifyStoredResponse.set('');
     this.verifyUploadResponse.set('');
@@ -915,6 +971,25 @@ export class App implements OnInit, OnDestroy {
     return new HttpHeaders({
       Authorization: `Bearer ${this.token()}`,
     });
+  }
+
+  private buildReceiptFileName(response: UploadResponse): string {
+    const originalName = response.document?.originalName || 'document';
+    const blockIndex = response.receipt?.blockIndex;
+    const safeDocumentName = this.safeFileName(originalName.replace(/\.[^/.]+$/, ''));
+    const blockPart = blockIndex === undefined ? 'block' : `block-${blockIndex}`;
+
+    return `documentchain-receipt-${safeDocumentName}-${blockPart}.json`;
+  }
+
+  private safeFileName(value: string): string {
+    return (
+      value
+        .trim()
+        .replace(/[^a-zA-Z0-9-_]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 60) || 'document'
+    );
   }
 
   private saveBlob(blob: Blob, fileName: string): void {

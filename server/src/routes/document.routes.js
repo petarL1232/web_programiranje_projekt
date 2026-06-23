@@ -89,6 +89,9 @@ const findOwnedDocument = (documentId, userId) =>
 const findOwnedDocumentWithBlock = (documentId, userId) =>
   findOwnedDocument(documentId, userId).select('+fileData').populate('blockId');
 
+const findDownloadableOrPublicDocumentWithBlock = (documentId) =>
+  Document.findById(documentId).select('+fileData').populate('blockId');
+
 const getExpectedPreviousHash = async (block) => {
   if (block.index === 0) {
     return 'GENESIS';
@@ -347,19 +350,28 @@ router.patch('/:documentId/visibility', authenticate, async (request, response, 
 
 const verifyStoredHandler = async (request, response, next) => {
   try {
-    const document = await findOwnedDocumentWithBlock(request.params.documentId, request.user._id);
+    const document = await findDownloadableOrPublicDocumentWithBlock(request.params.documentId);
 
     if (!document) {
       return response.status(404).json({
         status: 'error',
-        message: 'Document not found for current user',
+        message: 'Document not found',
       });
     }
 
-    if (!isDocumentOwner(document, request.user)) {
+    const isOwner = isDocumentOwner(document, request.user);
+
+    if (!document.isPublic && !request.user) {
+      return response.status(401).json({
+        status: 'error',
+        message: 'Login is required to verify private documents',
+      });
+    }
+
+    if (!document.isPublic && !isOwner) {
       return response.status(403).json({
         status: 'error',
-        message: 'You can verify only your own documents',
+        message: 'You can verify only your own private documents',
       });
     }
 
@@ -429,6 +441,7 @@ const verifyStoredHandler = async (request, response, next) => {
         originalName: document.originalName,
         documentHash: getDocumentHash(document),
         isPublic: Boolean(document.isPublic),
+        relation: isOwner ? 'own_document' : 'public_document',
         createdAt: document.createdAt,
       },
       block: {
@@ -445,10 +458,10 @@ const verifyStoredHandler = async (request, response, next) => {
   }
 };
 
-router.post('/:documentId/verify', authenticate, verifyStoredHandler);
+router.post('/:documentId/verify', optionalAuthenticate, verifyStoredHandler);
 
 // Backward-compatible route name from the previous development phase.
-router.get('/:documentId/verify-stored', authenticate, verifyStoredHandler);
+router.get('/:documentId/verify-stored', optionalAuthenticate, verifyStoredHandler);
 
 router.get('/:documentId/download', optionalAuthenticate, async (request, response, next) => {
   try {
