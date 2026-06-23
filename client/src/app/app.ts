@@ -316,20 +316,22 @@ export class App implements OnInit, OnDestroy {
     this.authResponse.set('');
     this.error.set('');
 
-    this.http.post<AuthResponse>(`${this.apiUrl}/api/auth/register`, { email, password }).subscribe({
-      next: (response) => {
-        this.handleAuthSuccess(response);
-        this.loadMyDocuments();
-        this.loadPublicDocuments();
-        this.loadBlockchain();
-        this.loading.set(false);
-      },
-      error: (err) => {
-        console.error(err);
-        this.error.set(err.error?.message || 'Registration failed.');
-        this.loading.set(false);
-      },
-    });
+    this.http
+      .post<AuthResponse>(`${this.apiUrl}/api/auth/register`, { email, password })
+      .subscribe({
+        next: (response) => {
+          this.handleAuthSuccess(response);
+          this.loadMyDocuments();
+          this.loadPublicDocuments();
+          this.loadBlockchain();
+          this.loading.set(false);
+        },
+        error: (err) => {
+          console.error(err);
+          this.error.set(err.error?.message || 'Registration failed.');
+          this.loading.set(false);
+        },
+      });
   }
 
   login(email: string, password: string): void {
@@ -486,7 +488,7 @@ export class App implements OnInit, OnDestroy {
 
     if (!document.isPublic) {
       const confirmed = window.confirm(
-        `Make "${document.originalName}" public? Anyone will be able to see it in Public documents, verify it, and download it through the backend route.`
+        `Make "${document.originalName}" public? Anyone will be able to see it in Public documents, verify it, and download it through the backend route.`,
       );
 
       if (!confirmed) {
@@ -498,11 +500,9 @@ export class App implements OnInit, OnDestroy {
     this.error.set('');
 
     this.http
-      .patch<DocumentListResponse | { status: string; message: string; document: DocumentSummary }>(
-        `${this.apiUrl}/api/documents/${document.id}/visibility`,
-        { isPublic: !document.isPublic },
-        { headers: this.authHeaders() }
-      )
+      .patch<
+        DocumentListResponse | { status: string; message: string; document: DocumentSummary }
+      >(`${this.apiUrl}/api/documents/${document.id}/visibility`, { isPublic: !document.isPublic }, { headers: this.authHeaders() })
       .subscribe({
         next: (response) => {
           this.documentResponse.set(JSON.stringify(response, null, 2));
@@ -546,7 +546,9 @@ export class App implements OnInit, OnDestroy {
 
     const options = this.token() ? { headers: this.authHeaders() } : {};
 
-    this.http.get<BlockchainValidationResponse>(`${this.apiUrl}/api/blockchain/validate`, options).subscribe({
+    this.http
+      .get<BlockchainValidationResponse>(`${this.apiUrl}/api/blockchain/validate`, options)
+      .subscribe({
         next: (response) => {
           const isChainValid = response.validation?.isChainValid ?? false;
           const brokenAtIndex = response.validation?.brokenAtIndex ?? null;
@@ -558,12 +560,12 @@ export class App implements OnInit, OnDestroy {
           this.chainValidationMessage.set(
             isChainValid
               ? 'Blockchain lanac je valjan. Ova provjera čita samo block zapise, ne fileove.'
-              : `Blockchain lanac je pukao na bloku #${brokenAtIndex}. Blokovi od #${affectedFromIndex} nadalje nisu potpuno pouzdani.`
+              : `Blockchain lanac je pukao na bloku #${brokenAtIndex}. Blokovi od #${affectedFromIndex} nadalje nisu potpuno pouzdani.`,
           );
           this.chainBreakDetails.set(
             isChainValid
               ? ''
-              : `Direktno neispravni blokovi: ${this.formatBlockIndexes(directBroken)}. Zahvaćeni blokovi: ${this.formatBlockIndexes(affectedBlocks)}.`
+              : `Direktno neispravni blokovi: ${this.formatBlockIndexes(directBroken)}. Zahvaćeni blokovi: ${this.formatBlockIndexes(affectedBlocks)}.`,
           );
           this.chainValidationResponse.set(JSON.stringify(response, null, 2));
           this.loading.set(false);
@@ -597,7 +599,8 @@ export class App implements OnInit, OnDestroy {
       error: (err) => {
         console.error(err);
         this.error.set(
-          err.error?.message || 'Download failed. Private documents can be downloaded only by owner.'
+          err.error?.message ||
+            'Download failed. Private documents can be downloaded only by owner.',
         );
         this.loading.set(false);
       },
@@ -624,14 +627,19 @@ export class App implements OnInit, OnDestroy {
     const options = this.token() ? { headers: this.authHeaders() } : {};
 
     this.http
-      .post<StoredVerificationResponse>(`${this.apiUrl}/api/documents/${document.id}/verify`, {}, options)
+      .post<StoredVerificationResponse>(
+        `${this.apiUrl}/api/documents/${document.id}/verify`,
+        {},
+        options,
+      )
       .subscribe({
         next: (response) => {
           const documentOk = response.verification?.documentIntegrity?.isValid ?? false;
           const blockchainOk = response.verification?.blockchainIntegrity?.isValid ?? false;
           const wholeChainOk = response.verification?.chainIntegrity?.isChainValid ?? false;
           const firstBrokenIndex = response.verification?.chainIntegrity?.firstBrokenIndex ?? null;
-          const affectedFromIndex = response.verification?.chainIntegrity?.affectedFromIndex ?? null;
+          const affectedFromIndex =
+            response.verification?.chainIntegrity?.affectedFromIndex ?? null;
           const isAuthentic = response.verification?.isAuthentic ?? false;
           let message =
             'Dokument je izmijenjen ili oštećen: trenutni hash ne odgovara Document/Block hashu.';
@@ -642,7 +650,8 @@ export class App implements OnInit, OnDestroy {
           } else if (documentOk && blockchainOk && !wholeChainOk) {
             message = `Hash dokumenta i njegov blok izgledaju OK, ali cijeli blockchain lanac je pukao na bloku #${firstBrokenIndex}.`;
           } else if (documentOk && !blockchainOk) {
-            message = 'Hash dokumenta je ispravan, ali hash bloka ili direct previousHash veza nije valjana.';
+            message =
+              'Hash dokumenta je ispravan, ali hash bloka ili direct previousHash veza nije valjana.';
           }
 
           this.storedDocumentCheckOk.set(documentOk);
@@ -651,7 +660,7 @@ export class App implements OnInit, OnDestroy {
           this.storedChainBreakMessage.set(
             wholeChainOk
               ? ''
-              : `Lanac je pukao na bloku #${firstBrokenIndex}; blokovi od #${affectedFromIndex} nadalje nisu potpuno pouzdani.`
+              : `Lanac je pukao na bloku #${firstBrokenIndex}; blokovi od #${affectedFromIndex} nadalje nisu potpuno pouzdani.`,
           );
           this.storedVerificationMessage.set(message);
           this.verifyMessage.set(message);
@@ -689,7 +698,7 @@ export class App implements OnInit, OnDestroy {
       .post<UploadedVerificationResponse>(
         `${this.apiUrl}/api/documents/verify-uploaded`,
         formData,
-        { headers: this.authHeaders() }
+        { headers: this.authHeaders() },
       )
       .subscribe({
         next: (response) => {
@@ -702,14 +711,16 @@ export class App implements OnInit, OnDestroy {
           if (!isKnown) {
             this.verifyMessage.set('Dokument je nepoznat ili izmijenjen.');
           } else if (chainOk) {
-            this.verifyMessage.set('Dokument postoji u valjanoj blockchain evidenciji kojoj imaš pristup.');
+            this.verifyMessage.set(
+              'Dokument postoji u valjanoj blockchain evidenciji kojoj imaš pristup.',
+            );
           } else if (affectedMatches.length > 0) {
             this.verifyMessage.set(
-              `Hash dokumenta postoji u dostupnim zapisima, ali lanac je pukao na bloku #${firstBrokenIndex}, prije ili na pronađenom zapisu.`
+              `Hash dokumenta postoji u dostupnim zapisima, ali lanac je pukao na bloku #${firstBrokenIndex}, prije ili na pronađenom zapisu.`,
             );
           } else {
             this.verifyMessage.set(
-              `Hash dokumenta postoji u dostupnim zapisima, ali cijeli blockchain lanac nije valjan. Prvi problem je na bloku #${firstBrokenIndex}.`
+              `Hash dokumenta postoji u dostupnim zapisima, ali cijeli blockchain lanac nije valjan. Prvi problem je na bloku #${firstBrokenIndex}.`,
             );
           }
           this.verifyUploadResponse.set(JSON.stringify(response, null, 2));
@@ -725,7 +736,7 @@ export class App implements OnInit, OnDestroy {
 
   resetTestData(): void {
     const confirmed = window.confirm(
-      'This deletes all documents, stored files, and blockchain blocks from the local development database. Users stay saved. Continue?'
+      'This deletes all documents, stored files, and blockchain blocks from the local development database. Users stay saved. Continue?',
     );
 
     if (!confirmed) {
@@ -766,7 +777,8 @@ export class App implements OnInit, OnDestroy {
       error: (err) => {
         console.error(err);
         this.error.set(
-          err.error?.message || 'Development reset failed. This route works only in NODE_ENV=development.'
+          err.error?.message ||
+            'Development reset failed. This route works only in NODE_ENV=development.',
         );
         this.loading.set(false);
       },
@@ -855,8 +867,8 @@ export class App implements OnInit, OnDestroy {
           blocks: this.blockchainBlocks(),
         },
         null,
-        2
-      )
+        2,
+      ),
     );
     this.addRealtimeEvent(event.message);
   }
@@ -971,11 +983,13 @@ export class App implements OnInit, OnDestroy {
   }
 
   private safeFileName(value: string): string {
-    return value
-      .trim()
-      .replace(/[^a-zA-Z0-9-_]+/g, '-')
-      .replace(/^-+|-+$/g, '')
-      .slice(0, 60) || 'document';
+    return (
+      value
+        .trim()
+        .replace(/[^a-zA-Z0-9-_]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 60) || 'document'
+    );
   }
 
   private saveBlob(blob: Blob, fileName: string): void {
