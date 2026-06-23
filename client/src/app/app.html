@@ -1,123 +1,216 @@
-<main class="page">
-  <section class="card hero-card">
-    <div class="hero-layout">
+<main class="app-shell">
+  <aside class="app-sidebar">
+    <div class="brand-card">
+      <div class="brand-mark">DC</div>
       <div>
-        <h1>Web programiranje projekt</h1>
-        <h2>DocumentChain</h2>
-        <p>
-          Web aplikacija za sigurnu pohranu dokumenata, download i provjeru autentičnosti pomoću
-          SHA-256 hasha i blockchain-style evidencije zapisa.
-        </p>
-      </div>
-
-      <div class="realtime-pill" [class.connected]="socketConnected()">
-        {{ socketConnected() ? 'Realtime connected' : 'Realtime disconnected' }}
+        <p class="eyebrow">Web programiranje projekt</p>
+        <h1>DocumentChain</h1>
       </div>
     </div>
 
-    <nav class="view-tabs" aria-label="Application sections">
-      <button
-        type="button"
-        [class.active]="activeView() === 'dashboard'"
-        (click)="setActiveView('dashboard')"
-      >
-        Dashboard
+    <nav class="side-nav" aria-label="Application pages">
+      <button type="button" [class.active]="activeView() === 'dashboard'" (click)="setActiveView('dashboard')">
+        <span>Overview</span>
+        <small>Status projekta</small>
       </button>
-      <button
-        type="button"
-        [class.active]="activeView() === 'documents'"
-        (click)="setActiveView('documents')"
-      >
-        Documents
+      <button type="button" [class.active]="activeView() === 'auth'" (click)="setActiveView('auth')">
+        <span>Login / Register</span>
+        <small>JWT pristup</small>
       </button>
-      <button
-        type="button"
-        [class.active]="activeView() === 'verify'"
-        (click)="setActiveView('verify')"
-      >
-        Verify
+      <button type="button" [class.active]="activeView() === 'upload'" (click)="setActiveView('upload')">
+        <span>Upload</span>
+        <small>Hash + block</small>
       </button>
-      <button
-        type="button"
-        [class.active]="activeView() === 'blockchain'"
-        (click)="setActiveView('blockchain')"
-      >
-        Blockchain Explorer
+      <button type="button" [class.active]="activeView() === 'documents'" (click)="setActiveView('documents')">
+        <span>Documents</span>
+        <small>Private / public</small>
+      </button>
+      <button type="button" [class.active]="activeView() === 'verify'" (click)="setActiveView('verify')">
+        <span>Verify</span>
+        <small>Autentičnost</small>
+      </button>
+      <button type="button" [class.active]="activeView() === 'blockchain'" (click)="setActiveView('blockchain')">
+        <span>Blockchain</span>
+        <small>Realtime explorer</small>
       </button>
       <button type="button" [class.active]="activeView() === 'dev'" (click)="setActiveView('dev')">
-        Dev tools
+        <span>Dev tools</span>
+        <small>Test reset</small>
       </button>
     </nav>
-  </section>
 
-  @if (activeView() === 'dashboard') {
-    <section class="card">
-      <h2>Backend status</h2>
-      <p>Brza provjera backend health rute i MongoDB modela.</p>
+    <div class="sidebar-status" [class.connected]="socketConnected()">
+      <span class="status-dot"></span>
+      <div>
+        <strong>{{ socketConnected() ? 'LIVE' : 'OFFLINE' }}</strong>
+        <small>Socket.io blockchain channel</small>
+      </div>
+    </div>
+  </aside>
 
-      <div class="actions">
-        <button type="button" (click)="testBackend()" [disabled]="loading()">
-          {{ loading() ? 'Testing...' : 'Test backend' }}
-        </button>
-
-        <button type="button" (click)="testModels()" [disabled]="loading()">
-          Test database models
-        </button>
+  <section class="content-panel">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">SHA-256 document storage</p>
+        <h2>
+          @if (activeView() === 'dashboard') {
+          <span>Project overview</span>
+          } @else if (activeView() === 'auth') {
+          <span>Login and registration</span>
+          } @else if (activeView() === 'upload') {
+          <span>Upload document</span>
+          } @else if (activeView() === 'documents') {
+          <span>Document dashboard</span>
+          } @else if (activeView() === 'verify') {
+          <span>Verify authenticity</span>
+          } @else if (activeView() === 'blockchain') {
+          <span>Public blockchain explorer</span>
+          } @else {
+          <span>Development tools</span>
+          }
+        </h2>
       </div>
 
-      @if (backendResponse()) {
+      <div class="user-chip" [class.logged-in]="currentUser()">
+        @if (currentUser()) {
+        <span>{{ currentUser()?.email }}</span>
+        } @else {
+        <span>Not logged in</span>
+        }
+      </div>
+    </header>
+
+    @if (error()) {
+    <section class="alert alert-error">
+      <strong>Problem</strong>
+      <span>{{ error() }}</span>
+    </section>
+    }
+
+    @if (activeView() === 'dashboard') {
+    <section class="hero-section">
+      <div class="hero-copy">
+        <p class="eyebrow">DocumentChain</p>
+        <h3>Pohrana dokumenata s provjerljivom blockchain-style evidencijom.</h3>
+        <p>
+          Dokumenti se spremaju normalno, a blockchain zapis čuva hash dokumenta, document id,
+          previousHash i block hash. Hash štiti dokument, a lanac štiti povijest zapisa.
+        </p>
+      </div>
+
+      <div class="hero-actions">
+        <button type="button" (click)="setActiveView('upload')" [disabled]="!token()">Upload document</button>
+        <button type="button" class="secondary" (click)="setActiveView('blockchain')">
+          Open explorer
+        </button>
+      </div>
+    </section>
+
+    <section class="metric-grid">
+      <article class="metric-card">
+        <span>My documents</span>
+        <strong>{{ myDocuments().length }}</strong>
+        <small>JWT protected</small>
+      </article>
+      <article class="metric-card">
+        <span>Public documents</span>
+        <strong>{{ publicDocuments().length }}</strong>
+        <small>Download through backend</small>
+      </article>
+      <article class="metric-card">
+        <span>Blocks</span>
+        <strong>{{ blockchainSummary()?.totalBlocks || blockchainBlocks().length }}</strong>
+        <small>Append-only audit log</small>
+      </article>
+      <article class="metric-card" [class.metric-ok]="blockchainSummary()?.isChainValid">
+        <span>Chain status</span>
+        <strong>{{ blockchainSummary()?.isChainValid ? 'Valid' : 'Check' }}</strong>
+        <small>No file download during validation</small>
+      </article>
+    </section>
+
+    <section class="card-grid two-columns">
+      <article class="card">
+        <div class="section-heading-row">
+          <div>
+            <p class="eyebrow">Backend</p>
+            <h3>Health and model status</h3>
+          </div>
+        </div>
+        <p>Brza provjera Express backend rute, MongoDB konekcije i Mongoose modela.</p>
+        <div class="actions">
+          <button type="button" (click)="testBackend()" [disabled]="loading()">
+            {{ loading() ? 'Testing...' : 'Test backend' }}
+          </button>
+          <button type="button" class="secondary" (click)="testModels()" [disabled]="loading()">
+            Test models
+          </button>
+        </div>
+
+        @if (backendResponse()) {
         <details open>
           <summary>Backend health</summary>
           <pre>{{ backendResponse() }}</pre>
         </details>
-      }
-      @if (modelResponse()) {
+        }
+        @if (modelResponse()) {
         <details>
           <summary>Model status</summary>
           <pre>{{ modelResponse() }}</pre>
         </details>
-      }
-    </section>
+        }
+      </article>
 
-    <section class="card">
-      <h2>Authentication</h2>
-      <p>Test registracije, prijave i JWT protected rute <code>/api/auth/me</code>.</p>
+      <article class="card quick-flow-card">
+        <p class="eyebrow">Flow</p>
+        <h3>Preporučeni test redoslijed</h3>
+        <ol class="flow-list">
+          <li><button type="button" (click)="setActiveView('auth')">Login / register</button></li>
+          <li><button type="button" (click)="setActiveView('upload')">Upload + receipt</button></li>
+          <li><button type="button" (click)="setActiveView('documents')">Download / public</button></li>
+          <li><button type="button" (click)="setActiveView('verify')">Verify file</button></li>
+          <li><button type="button" (click)="setActiveView('blockchain')">Validate chain</button></li>
+        </ol>
+      </article>
+    </section>
+    }
+
+    @if (activeView() === 'auth') {
+    <section class="card page-card">
+      <div class="section-heading-row">
+        <div>
+          <p class="eyebrow">Authentication</p>
+          <h3>Register, login and JWT profile</h3>
+        </div>
+        @if (currentUser()) {
+        <span class="badge success">Logged in</span>
+        } @else {
+        <span class="badge">Guest</span>
+        }
+      </div>
 
       @if (currentUser()) {
-        <div class="status-box success">
-          Logged in as <strong>{{ currentUser()?.email }}</strong> ({{ currentUser()?.role }})
-        </div>
+      <div class="alert alert-success">
+        Logged in as <strong>{{ currentUser()?.email }}</strong> with role {{ currentUser()?.role }}.
+      </div>
       } @else {
-        <div class="status-box">Not logged in.</div>
+      <div class="alert">Register ili login je potreban za upload, private download i private verify.</div>
       }
 
       <div class="auth-grid">
-        <form
-          class="auth-form"
-          (submit)="$event.preventDefault(); register(registerEmail.value, registerPassword.value)"
-        >
-          <h3>Register</h3>
-
+        <form class="auth-form" (submit)="$event.preventDefault(); register(registerEmail.value, registerPassword.value)">
+          <h4>Create account</h4>
           <label for="registerEmail">Email</label>
           <input id="registerEmail" #registerEmail type="email" placeholder="test@example.com" />
 
           <label for="registerPassword">Password</label>
-          <input
-            id="registerPassword"
-            #registerPassword
-            type="password"
-            placeholder="at least 8 chars"
-          />
+          <input id="registerPassword" #registerPassword type="password" placeholder="at least 8 chars" />
 
           <button type="submit" [disabled]="loading()">Register</button>
         </form>
 
-        <form
-          class="auth-form"
-          (submit)="$event.preventDefault(); login(loginEmail.value, loginPassword.value)"
-        >
-          <h3>Login</h3>
-
+        <form class="auth-form" (submit)="$event.preventDefault(); login(loginEmail.value, loginPassword.value)">
+          <h4>Login</h4>
           <label for="loginEmail">Email</label>
           <input id="loginEmail" #loginEmail type="email" placeholder="test@example.com" />
 
@@ -129,490 +222,418 @@
       </div>
 
       <div class="actions">
-        <button type="button" (click)="getProfile()" [disabled]="loading() || !token()">
-          Test /auth/me
-        </button>
-        <button type="button" (click)="loadMyDocuments()" [disabled]="loading() || !token()">
+        <button type="button" (click)="getProfile()" [disabled]="loading() || !token()">Test /auth/me</button>
+        <button type="button" class="secondary" (click)="loadMyDocuments()" [disabled]="loading() || !token()">
           Load my documents
         </button>
-        <button type="button" (click)="loadPublicDocuments()" [disabled]="loading()">
+        <button type="button" class="secondary" (click)="loadPublicDocuments()" [disabled]="loading()">
           Load public documents
         </button>
-        <button type="button" class="secondary" (click)="logout()" [disabled]="!token()">
-          Logout
-        </button>
+        <button type="button" class="ghost" (click)="logout()" [disabled]="!token()">Logout</button>
       </div>
 
       @if (authResponse()) {
-        <details>
-          <summary>Auth response</summary>
-          <pre>{{ authResponse() }}</pre>
-        </details>
+      <details>
+        <summary>Auth response</summary>
+        <pre>{{ authResponse() }}</pre>
+      </details>
       }
     </section>
+    }
 
-    <section class="card">
-      <h2>Upload document</h2>
-      <p>
-        Upload je JWT protected. Backend validira file, sprema dokument u private server folder,
-        računa SHA-256 hash i kreira novi blockchain blok. Nakon uploada Socket.io šalje event
-        exploreru.
-      </p>
-      <p class="small-note">
-        Dokumenti nisu u public folderu. Public dokumenti se i dalje skidaju samo kroz backend
-        download rutu, nikad direktnim file URL-om.
-      </p>
+    @if (activeView() === 'upload') {
+    <section class="card page-card upload-page-card">
+      <div class="section-heading-row">
+        <div>
+          <p class="eyebrow">Upload flow</p>
+          <h3>Upload document, create SHA-256 hash and blockchain block</h3>
+        </div>
+        <span class="badge">Max 10 MB</span>
+      </div>
+
+      <div class="info-strip">
+        <span>JWT protected</span>
+        <span>Backend validation</span>
+        <span>Server-side hash</span>
+        <span>Receipt JSON</span>
+      </div>
 
       @if (!token()) {
-        <div class="status-box warning">Login je potreban prije uploada dokumenta.</div>
+      <div class="alert alert-warning">Login je potreban prije uploada dokumenta.</div>
       }
 
-      <form
-        class="upload-form"
-        (submit)="$event.preventDefault(); uploadDocument(uploadFile.files)"
-      >
-        <label for="uploadFile">Document file</label>
-        <input id="uploadFile" #uploadFile type="file" />
-
-        <button type="submit" [disabled]="loading() || !token()">
-          Upload document and create block
-        </button>
+      <form class="upload-dropzone" (submit)="$event.preventDefault(); uploadDocument(uploadFile.files)">
+        <div>
+          <h4>Select document</h4>
+          <p>
+            File se ne izvršava na serveru. Backend ga samo sprema, čita kao byteove, hashira i šalje kao
+            attachment kod downloada.
+          </p>
+        </div>
+        <label for="uploadFile" class="file-picker">
+          <input id="uploadFile" #uploadFile type="file" />
+          <span>Choose file</span>
+        </label>
+        <button type="submit" [disabled]="loading() || !token()">Upload document and create block</button>
       </form>
 
       @if (uploadResponse()) {
-        <details open>
-          <summary>Upload receipt</summary>
-          <pre>{{ uploadResponse() }}</pre>
-        </details>
-
-        <div class="actions compact">
+      <article class="receipt-card">
+        <div class="section-heading-row">
+          <div>
+            <p class="eyebrow">Upload receipt</p>
+            <h4>Proof of upload</h4>
+          </div>
           <button type="button" class="secondary" (click)="downloadUploadReceipt()">
             Download receipt JSON
           </button>
         </div>
+        <details open>
+          <summary>Receipt data</summary>
+          <pre>{{ uploadResponse() }}</pre>
+        </details>
+      </article>
       }
     </section>
-  }
+    }
 
-  @if (activeView() === 'documents') {
-    <section class="card">
-      <h2>My documents</h2>
-      <p>
-        Ovdje loginani korisnik vidi svoje dokumente. Private dokument može downloadati samo
-        vlasnik. Public dokument može downloadati bilo tko, ali i dalje samo kroz backend rutu.
-      </p>
-
-      <div class="actions">
-        <button type="button" (click)="loadMyDocuments()" [disabled]="loading() || !token()">
-          Refresh my documents
-        </button>
+    @if (activeView() === 'documents') {
+    <section class="card page-card">
+      <div class="section-heading-row">
+        <div>
+          <p class="eyebrow">Document dashboard</p>
+          <h3>Private and public documents</h3>
+        </div>
+        <div class="actions inline-actions">
+          <button type="button" (click)="loadMyDocuments()" [disabled]="loading() || !token()">
+            Refresh mine
+          </button>
+          <button type="button" class="secondary" (click)="loadPublicDocuments()" [disabled]="loading()">
+            Refresh public
+          </button>
+        </div>
       </div>
 
-      @if (!token()) {
-        <div class="status-box warning">Login je potreban za pregled vlastitih dokumenata.</div>
-      }
-      @if (myDocuments().length === 0 && token()) {
-        <div class="status-box">Još nemaš uploadanih dokumenata.</div>
-      }
+      <div class="document-layout">
+        <section>
+          <h4>My documents</h4>
+          <p class="small-note">
+            Private dokument može skinuti i verificirati samo vlasnik. Public dokument vide svi.
+          </p>
 
-      <div class="document-grid">
-        @for (document of myDocuments(); track document.id) {
-          <article class="document-card">
-            <div class="document-header">
-              <h3>{{ document.originalName }}</h3>
-              <span class="visibility" [class.public]="document.isPublic">
-                {{ document.isPublic ? 'PUBLIC' : 'PRIVATE' }}
-              </span>
-            </div>
+          @if (!token()) {
+          <div class="alert alert-warning">Login je potreban za pregled vlastitih dokumenata.</div>
+          }
+          @if (myDocuments().length === 0 && token()) {
+          <div class="empty-state">Još nemaš uploadanih dokumenata.</div>
+          }
 
-            <p><strong>Size:</strong> {{ formatBytes(document.size) }}</p>
-            <p><strong>Type:</strong> {{ document.mimeType }}</p>
-            <p>
-              <strong>Document hash:</strong>
-              <code>{{ shortHash(document.documentHash || document.fileHash) }}</code>
-            </p>
-            @if (document.block) {
-              <p><strong>Block:</strong> #{{ document.block.index }}</p>
-              <p>
-                <strong>Block hash:</strong>
-                <code>{{ shortHash(document.block.hash) }}</code>
-              </p>
-            }
+          <div class="document-grid">
+            @for (document of myDocuments(); track document.id) {
+            <article class="document-card">
+              <div class="document-header">
+                <h5>{{ document.originalName }}</h5>
+                <span class="visibility" [class.public]="document.isPublic">
+                  {{ document.isPublic ? 'PUBLIC' : 'PRIVATE' }}
+                </span>
+              </div>
 
-            <div class="actions compact">
-              <button type="button" (click)="downloadDocument(document)" [disabled]="loading()">
-                Download
-              </button>
+              <dl class="document-meta">
+                <div><dt>Size</dt><dd>{{ formatBytes(document.size) }}</dd></div>
+                <div><dt>Type</dt><dd>{{ document.mimeType }}</dd></div>
+                <div><dt>Hash</dt><dd><code>{{ shortHash(document.documentHash || document.fileHash) }}</code></dd></div>
+                @if (document.block) {
+                <div><dt>Block</dt><dd>#{{ document.block.index }} · {{ shortHash(document.block.hash) }}</dd></div>
+                }
+              </dl>
 
-              <button
-                type="button"
-                class="secondary"
-                (click)="verifyStoredDocument(document)"
-                [disabled]="loading()"
-              >
-                Verify stored
-              </button>
+              <div class="actions compact-card-actions">
+                <button type="button" (click)="downloadDocument(document)" [disabled]="loading()">Download</button>
+                <button type="button" class="secondary" (click)="verifyStoredDocument(document)" [disabled]="loading()">
+                  Verify stored
+                </button>
+                <button type="button" class="ghost" (click)="toggleDocumentVisibility(document)" [disabled]="loading()">
+                  {{ document.isPublic ? 'Make private' : 'Make public' }}
+                </button>
+              </div>
 
-              <button
-                type="button"
-                class="secondary"
-                (click)="toggleDocumentVisibility(document)"
-                [disabled]="loading()"
-              >
-                {{ document.isPublic ? 'Make private' : 'Make public' }}
-              </button>
-            </div>
-
-            @if (
-              lastStoredVerificationDocumentId() === document.id && storedVerificationMessage()
-            ) {
-              <div
-                class="status-box"
-                [class.success]="
-                  storedDocumentCheckOk() === true &&
-                  storedBlockchainCheckOk() === true &&
-                  storedWholeChainCheckOk() === true
-                "
-                [class.warning]="
-                  storedDocumentCheckOk() === false ||
-                  storedBlockchainCheckOk() === false ||
-                  storedWholeChainCheckOk() === false
-                "
-              >
-                <strong>Stored verification:</strong> {{ storedVerificationMessage() }}
+              @if (lastStoredVerificationDocumentId() === document.id && storedVerificationMessage()) {
+              <div class="verification-panel" [class.ok]="storedDocumentCheckOk() && storedBlockchainCheckOk() && storedWholeChainCheckOk()">
+                <strong>{{ storedVerificationMessage() }}</strong>
                 <ul class="check-list">
                   <li>Document hash check: {{ storedDocumentCheckOk() ? 'OK' : 'FAILED' }}</li>
-                  <li>
-                    Block hash/direct link check: {{ storedBlockchainCheckOk() ? 'OK' : 'FAILED' }}
-                  </li>
-                  <li>
-                    Whole blockchain chain check: {{ storedWholeChainCheckOk() ? 'OK' : 'FAILED' }}
-                  </li>
+                  <li>Block direct check: {{ storedBlockchainCheckOk() ? 'OK' : 'FAILED' }}</li>
+                  <li>Whole chain check: {{ storedWholeChainCheckOk() ? 'OK' : 'FAILED' }}</li>
                 </ul>
                 @if (storedChainBreakMessage()) {
-                  <p class="chain-warning">{{ storedChainBreakMessage() }}</p>
+                <p class="chain-warning">{{ storedChainBreakMessage() }}</p>
                 }
               </div>
+              }
+            </article>
             }
-          </article>
-        }
+          </div>
+        </section>
+
+        <section>
+          <h4>Public documents</h4>
+          <p class="small-note">
+            Public dokument je dostupan svima, ali download i dalje ide samo kroz backend rutu.
+          </p>
+
+          @if (publicDocuments().length === 0) {
+          <div class="empty-state">Trenutno nema public dokumenata.</div>
+          }
+
+          <div class="document-grid">
+            @for (document of publicDocuments(); track document.id) {
+            <article class="document-card public-document">
+              <div class="document-header">
+                <h5>{{ document.originalName }}</h5>
+                <span class="visibility public">PUBLIC</span>
+              </div>
+
+              <dl class="document-meta">
+                <div><dt>Size</dt><dd>{{ formatBytes(document.size) }}</dd></div>
+                <div><dt>Type</dt><dd>{{ document.mimeType }}</dd></div>
+                <div><dt>Hash</dt><dd><code>{{ shortHash(document.documentHash || document.fileHash) }}</code></dd></div>
+                @if (document.block) {
+                <div><dt>Block</dt><dd>#{{ document.block.index }} · {{ shortHash(document.block.hash) }}</dd></div>
+                }
+              </dl>
+
+              <div class="actions compact-card-actions">
+                <button type="button" (click)="downloadDocument(document)" [disabled]="loading()">Download</button>
+                <button type="button" class="secondary" (click)="verifyStoredDocument(document)" [disabled]="loading()">
+                  Verify public file
+                </button>
+              </div>
+
+              @if (lastStoredVerificationDocumentId() === document.id && storedVerificationMessage()) {
+              <div class="verification-panel" [class.ok]="storedDocumentCheckOk() && storedBlockchainCheckOk() && storedWholeChainCheckOk()">
+                <strong>{{ storedVerificationMessage() }}</strong>
+                <ul class="check-list">
+                  <li>Document hash check: {{ storedDocumentCheckOk() ? 'OK' : 'FAILED' }}</li>
+                  <li>Block direct check: {{ storedBlockchainCheckOk() ? 'OK' : 'FAILED' }}</li>
+                  <li>Whole chain check: {{ storedWholeChainCheckOk() ? 'OK' : 'FAILED' }}</li>
+                </ul>
+              </div>
+              }
+            </article>
+            }
+          </div>
+        </section>
       </div>
 
       @if (documentResponse()) {
-        <details>
-          <summary>Document response</summary>
-          <pre>{{ documentResponse() }}</pre>
-        </details>
+      <details>
+        <summary>Last document API response</summary>
+        <pre>{{ documentResponse() }}</pre>
+      </details>
       }
     </section>
+    }
 
-    <section class="card">
-      <h2>Public documents</h2>
-      <p>
-        Ovdje se vide dokumenti koje su korisnici označili kao public. Public znači da je download
-        dopušten svima, ali dokument se i dalje ne servira iz public foldera nego kroz backend rutu.
-      </p>
-
-      <div class="actions">
-        <button type="button" (click)="loadPublicDocuments()" [disabled]="loading()">
-          Refresh public documents
-        </button>
-      </div>
-
-      @if (publicDocuments().length === 0) {
-        <div class="status-box">Trenutno nema public dokumenata.</div>
-      }
-
-      <div class="document-grid">
-        @for (document of publicDocuments(); track document.id) {
-          <article class="document-card public-document">
-            <div class="document-header">
-              <h3>{{ document.originalName }}</h3>
-              <span class="visibility public">PUBLIC</span>
-            </div>
-
-            <p><strong>Size:</strong> {{ formatBytes(document.size) }}</p>
-            <p><strong>Type:</strong> {{ document.mimeType }}</p>
-            <p>
-              <strong>Document hash:</strong>
-              <code>{{ shortHash(document.documentHash || document.fileHash) }}</code>
-            </p>
-            @if (document.block) {
-              <p><strong>Block:</strong> #{{ document.block.index }}</p>
-              <p>
-                <strong>Block hash:</strong>
-                <code>{{ shortHash(document.block.hash) }}</code>
-              </p>
-            }
-
-            <div class="actions compact">
-              <button type="button" (click)="downloadDocument(document)" [disabled]="loading()">
-                Download public file
-              </button>
-
-              <button
-                type="button"
-                class="secondary"
-                (click)="verifyStoredDocument(document)"
-                [disabled]="loading()"
-              >
-                Verify public file
-              </button>
-            </div>
-
-            @if (
-              lastStoredVerificationDocumentId() === document.id && storedVerificationMessage()
-            ) {
-              <div
-                class="status-box"
-                [class.success]="
-                  storedDocumentCheckOk() === true &&
-                  storedBlockchainCheckOk() === true &&
-                  storedWholeChainCheckOk() === true
-                "
-                [class.warning]="
-                  storedDocumentCheckOk() === false ||
-                  storedBlockchainCheckOk() === false ||
-                  storedWholeChainCheckOk() === false
-                "
-              >
-                <strong>Public verification:</strong> {{ storedVerificationMessage() }}
-                <ul class="check-list">
-                  <li>Document hash check: {{ storedDocumentCheckOk() ? 'OK' : 'FAILED' }}</li>
-                  <li>
-                    Block hash/direct link check: {{ storedBlockchainCheckOk() ? 'OK' : 'FAILED' }}
-                  </li>
-                  <li>
-                    Whole blockchain chain check: {{ storedWholeChainCheckOk() ? 'OK' : 'FAILED' }}
-                  </li>
-                </ul>
-                @if (storedChainBreakMessage()) {
-                  <p class="chain-warning">{{ storedChainBreakMessage() }}</p>
-                }
-              </div>
-            }
-          </article>
-        }
-      </div>
-    </section>
-  }
-
-  @if (activeView() === 'verify') {
-    <section class="card">
-      <h2>Verify uploaded file</h2>
-      <p>
-        Ova provjera ne sprema file trajno. Backend samo izračuna SHA-256 hash i traži postoji li
-        isti hash u tvojim dokumentima ili u public dokumentima.
-      </p>
-
-      <form
-        class="upload-form"
-        (submit)="$event.preventDefault(); verifyUploadedDocument(verifyFile.files)"
-      >
-        <label for="verifyFile">Document file for verification</label>
-        <input id="verifyFile" #verifyFile type="file" />
-
-        <button type="submit" [disabled]="loading() || !token()">Verify uploaded file</button>
-      </form>
-
-      @if (!token()) {
-        <div class="status-box warning">Login je potreban za verify uploaded file.</div>
-      }
-
-      @if (verifyMessage()) {
-        <div
-          class="status-box"
-          [class.success]="
-            verifyMessage().includes('autentičan') || verifyMessage().includes('postoji')
-          "
-          [class.warning]="
-            verifyMessage().includes('izmijenjen') || verifyMessage().includes('nepoznat')
-          "
-        >
-          {{ verifyMessage() }}
-        </div>
-      }
-      @if (verifyStoredResponse()) {
-        <details>
-          <summary>Stored document verification</summary>
-          <pre>{{ verifyStoredResponse() }}</pre>
-        </details>
-      }
-      @if (verifyUploadResponse()) {
-        <details open>
-          <summary>Uploaded document verification</summary>
-          <pre>{{ verifyUploadResponse() }}</pre>
-        </details>
-      }
-    </section>
-  }
-
-  @if (activeView() === 'blockchain') {
-    <section class="card blockchain-card">
+    @if (activeView() === 'verify') {
+    <section class="card page-card">
       <div class="section-heading-row">
         <div>
-          <h2>Blockchain Explorer</h2>
+          <p class="eyebrow">Authenticity check</p>
+          <h3>Verify uploaded file against your blockchain records</h3>
+        </div>
+        <span class="badge">No permanent storage</span>
+      </div>
+
+      <div class="verify-grid">
+        <article class="verify-card">
+          <h4>Upload file only for verification</h4>
           <p>
-            Public blockchain-style audit log. Explorer ne prikazuje fileove i ne downloada
-            dokumente. Prikazuje samo block zapise, hashove i validaciju lanca.
+            Backend izračuna SHA-256 hash i traži isti hash u blockchain evidenciji kojoj imaš pristup.
+            File se ne sprema trajno.
           </p>
-        </div>
-        <div class="realtime-pill" [class.connected]="socketConnected()">
-          {{ socketConnected() ? 'LIVE' : 'OFFLINE' }}
-        </div>
-      </div>
 
-      <div class="actions">
-        <button type="button" (click)="loadBlockchain()" [disabled]="loading()">
-          Reload explorer
-        </button>
-        <button
-          type="button"
-          class="secondary"
-          (click)="validateBlockchain()"
-          [disabled]="loading()"
-        >
-          Validate whole chain
-        </button>
-      </div>
-
-      @if (blockchainSummary()) {
-        <div
-          class="status-box explorer-summary"
-          [class.success]="blockchainSummary()?.isChainValid"
-          [class.warning]="blockchainSummary()?.isChainValid === false"
-        >
-          <strong>{{ blockchainSummary()?.isChainValid ? 'Chain valid' : 'Chain broken' }}</strong>
-          <span>Total blocks: {{ blockchainSummary()?.totalBlocks }}</span>
-          @if (blockchainSummary()?.firstBrokenIndex !== null) {
-            <span>First broken block: #{{ blockchainSummary()?.firstBrokenIndex }}</span>
+          @if (!token()) {
+          <div class="alert alert-warning">Login je potreban za verify uploadanog filea.</div>
           }
-          <p>{{ blockchainSummary()?.message }}</p>
+
+          <form class="upload-form" (submit)="$event.preventDefault(); verifyUploadedDocument(verifyFile.files)">
+            <label for="verifyFile">Document for verification</label>
+            <input id="verifyFile" #verifyFile type="file" />
+            <button type="submit" [disabled]="loading() || !token()">Verify uploaded file</button>
+          </form>
+        </article>
+
+        <article class="verify-card result-card">
+          <h4>Result</h4>
+          @if (verifyMessage()) {
+          <div class="alert" [class.alert-success]="verifyMessage().includes('valjanoj') || verifyMessage().includes('autentičan')">
+            {{ verifyMessage() }}
+          </div>
+          } @else {
+          <div class="empty-state">Rezultat provjere pojavit će se ovdje.</div>
+          }
+
+          @if (verifyUploadResponse()) {
+          <details>
+            <summary>Verify uploaded response</summary>
+            <pre>{{ verifyUploadResponse() }}</pre>
+          </details>
+          }
+          @if (verifyStoredResponse()) {
+          <details>
+            <summary>Stored verify response</summary>
+            <pre>{{ verifyStoredResponse() }}</pre>
+          </details>
+          }
+        </article>
+      </div>
+    </section>
+    }
+
+    @if (activeView() === 'blockchain') {
+    <section class="card page-card blockchain-card">
+      <div class="section-heading-row">
+        <div>
+          <p class="eyebrow">Public audit log</p>
+          <h3>Realtime Blockchain Explorer</h3>
         </div>
-      }
+        <div class="actions inline-actions">
+          <button type="button" (click)="loadBlockchain()" [disabled]="loading()">Refresh explorer</button>
+          <button type="button" class="secondary" (click)="validateBlockchain()" [disabled]="loading()">
+            Validate whole chain
+          </button>
+        </div>
+      </div>
+
+      <div class="explorer-summary-grid">
+        <article>
+          <span>Total blocks</span>
+          <strong>{{ blockchainSummary()?.totalBlocks || blockchainBlocks().length }}</strong>
+        </article>
+        <article [class.good]="blockchainSummary()?.isChainValid">
+          <span>Chain status</span>
+          <strong>{{ blockchainSummary()?.isChainValid ? 'Valid' : 'Broken / unknown' }}</strong>
+        </article>
+        <article [class.good]="socketConnected()">
+          <span>Realtime</span>
+          <strong>{{ socketConnected() ? 'LIVE' : 'OFFLINE' }}</strong>
+        </article>
+      </div>
 
       @if (chainValidationMessage()) {
-        <div
-          class="status-box"
-          [class.success]="chainValidationOk() === true"
-          [class.warning]="chainValidationOk() === false"
-        >
-          {{ chainValidationMessage() }}
-          @if (chainBreakDetails()) {
-            <p class="chain-warning">{{ chainBreakDetails() }}</p>
-          }
-        </div>
+      <div class="alert" [class.alert-success]="chainValidationOk()" [class.alert-error]="chainValidationOk() === false">
+        <strong>{{ chainValidationMessage() }}</strong>
+        @if (chainBreakDetails()) {
+        <span>{{ chainBreakDetails() }}</span>
+        }
+      </div>
       }
 
       @if (blockchainBlocks().length === 0) {
-        <div class="empty-chain">
-          Još nema blokova. Uploadaj dokument i explorer će se ažurirati preko Socket.io eventa.
-        </div>
+      <div class="empty-state blockchain-empty">Još nema blokova. Upload dokumenta će kreirati prvi blok.</div>
       }
 
-      <div class="blockchain-visual">
-        @for (block of blockchainBlocks(); track block.id; let isLast = $last) {
-          <article
-            class="block-node"
-            [class.block-trusted]="block.validation.isTrusted"
-            [class.block-broken]="block.validation.breaksChainHere"
-            [class.block-affected]="
-              block.validation.isAffectedByEarlierBreak && !block.validation.breaksChainHere
-            "
-          >
-            <div class="block-node-header">
+      <div class="blockchain-rail" aria-label="Visual blockchain">
+        @for (block of blockchainBlocks(); track block.id) {
+        <article
+          class="block-node"
+          [class.block-trusted]="block.validation.isTrusted"
+          [class.block-broken]="block.validation.breaksChainHere"
+          [class.block-affected]="block.validation.isAffectedByEarlierBreak"
+        >
+          <div class="block-node-header">
+            <div>
               <span class="block-index">Block #{{ block.index }}</span>
-              <span class="block-state">{{ blockStatusLabel(block) }}</span>
+              <p>{{ block.document?.originalName || 'Private document' }}</p>
             </div>
+            <span class="block-state">{{ blockStatusLabel(block) }}</span>
+          </div>
 
-            <p>
-              <strong>Document:</strong> {{ block.document?.originalName || 'Unknown document' }}
-            </p>
-            <p>
-              <strong>Visibility:</strong>
-              {{ block.document?.isPublic ? 'public' : 'private/hidden' }}
-            </p>
-            <p>
-              <strong>Document hash:</strong>
-              <code>{{ shortHash(block.documentHash) }}</code>
-            </p>
-            <p>
-              <strong>Previous hash:</strong>
-              <code>{{ shortHash(block.previousHash) }}</code>
-            </p>
-            <p>
-              <strong>Block hash:</strong>
-              <code>{{ shortHash(block.hash) }}</code>
-            </p>
-            <p><strong>Created:</strong> {{ formatDate(block.createdAt) }}</p>
+          <dl class="block-hashes">
+            <div><dt>Document hash</dt><dd><code>{{ shortHash(block.documentHash || block.fileHash) }}</code></dd></div>
+            <div><dt>Previous hash</dt><dd><code>{{ shortHash(block.previousHash) }}</code></dd></div>
+            <div><dt>Block hash</dt><dd><code>{{ shortHash(block.hash) }}</code></dd></div>
+            <div><dt>Created</dt><dd>{{ formatDate(block.createdAt) }}</dd></div>
+          </dl>
 
-            @if (block.validation.problems.length > 0) {
-              <ul class="check-list problem-list">
-                @for (problem of block.validation.problems; track problem) {
-                  <li>{{ problem }}</li>
-                }
-              </ul>
-            }
-          </article>
-
-          @if (!isLast) {
-            <div class="chain-link" aria-hidden="true">
-              <span></span>
-              previousHash link
-              <span></span>
-            </div>
-          }
-        }
-      </div>
-
-      <div class="realtime-feed">
-        <h3>Realtime events</h3>
-        @if (realtimeEvents().length === 0) {
-          <p class="small-note">Nema realtime eventova još.</p>
-        } @else {
-          <ul>
-            @for (event of realtimeEvents(); track event) {
-              <li>{{ event }}</li>
+          @if (block.validation.problems.length > 0) {
+          <ul class="problem-list">
+            @for (problem of block.validation.problems; track problem) {
+            <li>{{ problem }}</li>
             }
           </ul>
+          }
+        </article>
+
+        @if (!$last) {
+        <div class="chain-connector">
+          <span></span>
+          <strong>previousHash → hash</strong>
+          <span></span>
+        </div>
+        }
         }
       </div>
 
-      @if (chainValidationResponse()) {
-        <details>
-          <summary>Blockchain validation response</summary>
-          <pre>{{ chainValidationResponse() }}</pre>
-        </details>
-      }
+      <section class="realtime-feed">
+        <div class="section-heading-row">
+          <div>
+            <p class="eyebrow">Socket.io</p>
+            <h4>Realtime events</h4>
+          </div>
+        </div>
+        @if (realtimeEvents().length === 0) {
+        <p class="small-note">No realtime events yet.</p>
+        } @else {
+        <ul>
+          @for (event of realtimeEvents(); track event) {
+          <li>{{ event }}</li>
+          }
+        </ul>
+        }
+      </section>
+
       @if (blockchainResponse()) {
-        <details>
-          <summary>Blockchain raw response</summary>
-          <pre>{{ blockchainResponse() }}</pre>
-        </details>
+      <details>
+        <summary>Blockchain explorer JSON</summary>
+        <pre>{{ blockchainResponse() }}</pre>
+      </details>
+      }
+      @if (chainValidationResponse()) {
+      <details>
+        <summary>Validation JSON</summary>
+        <pre>{{ chainValidationResponse() }}</pre>
+      </details>
       }
     </section>
-  }
+    }
 
-  @if (activeView() === 'dev') {
-    <section class="card">
-      <h2>Development test tools</h2>
+    @if (activeView() === 'dev') {
+    <section class="card page-card dev-card">
+      <div class="section-heading-row">
+        <div>
+          <p class="eyebrow">Development only</p>
+          <h3>Test helpers</h3>
+        </div>
+        <span class="badge warning">Remove before deploy</span>
+      </div>
+
       <p>
-        Privremeno za lokalno testiranje: briše dokumente, private stored fileove i blokove, ali
-        ostavlja korisnike. Backend dozvoljava ovu rutu samo kada je
-        <code>NODE_ENV=development</code>.
+        Ovaj dio ostaje za sada jer još testiraš funkcionalnosti. Prije deploya ga potpuno uklanjamo ili
+        sakrivamo iza development-only pravila.
       </p>
+
       <button type="button" class="danger" (click)="resetTestData()" [disabled]="loading()">
         Reset documents and blockchain blocks
       </button>
+
       @if (devResponse()) {
+      <details open>
+        <summary>Dev response</summary>
         <pre>{{ devResponse() }}</pre>
+      </details>
       }
     </section>
-  }
-
-  @if (error()) {
-    <section class="card error-card">
-      <p class="error">{{ error() }}</p>
-    </section>
-  }
+    }
+  </section>
 </main>
