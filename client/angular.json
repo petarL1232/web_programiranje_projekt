@@ -5,7 +5,7 @@
   "projects": {
     "client": {
       "projectType": "application",
-      "schematics": {"@schematics/angular:component": {"style": "scss"}},
+      "schematics": { "@schematics/angular:component": { "style": "scss" } },
       "root": "",
       "sourceRoot": "src",
       "prefix": "app",
@@ -17,24 +17,27 @@
             "polyfills": [],
             "tsConfig": "tsconfig.app.json",
             "inlineStyleLanguage": "scss",
-            "assets": [{"glob": "**/*", "input": "public"}],
+            "assets": [{ "glob": "**/*", "input": "public" }],
             "styles": ["node_modules/bootstrap/dist/css/bootstrap.min.css", "src/styles.scss"]
           },
           "configurations": {
             "production": {
               "budgets": [
-                {"type": "initial", "maximumWarning": "700kB", "maximumError": "1MB"},
-                {"type": "anyComponentStyle", "maximumWarning": "24kB", "maximumError": "28kB"}
+                { "type": "initial", "maximumWarning": "700kB", "maximumError": "1MB" },
+                { "type": "anyComponentStyle", "maximumWarning": "24kB", "maximumError": "28kB" }
               ],
               "outputHashing": "all"
             },
-            "development": {"optimization": false, "extractLicenses": false, "sourceMap": true}
+            "development": { "optimization": false, "extractLicenses": false, "sourceMap": true }
           },
           "defaultConfiguration": "production"
         },
         "serve": {
           "builder": "@angular/build:dev-server",
-          "configurations": {"production": {"buildTarget": "client:build:production"}, "development": {"buildTarget": "client:build:development"}},
+          "configurations": {
+            "production": { "buildTarget": "client:build:production" },
+            "development": { "buildTarget": "client:build:development" }
+          },
           "defaultConfiguration": "development"
         }
       }
