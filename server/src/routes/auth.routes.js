@@ -7,7 +7,16 @@ const User = require('../models/User');
 
 const router = express.Router();
 
-const getJwtSecret = () => process.env.JWT_SECRET || 'development-secret-change-me';
+const getJwtSecret = () => {
+  const secret = process.env.JWT_SECRET;
+
+  if (!secret) {
+    throw new Error('JWT_SECRET is required');
+  }
+
+  return secret;
+};
+
 const getJwtExpiresIn = () => process.env.JWT_EXPIRES_IN || '1d';
 
 const createToken = (user) =>
@@ -72,7 +81,6 @@ router.post('/register', async (request, response, next) => {
     }
 
     const passwordHash = await bcrypt.hash(password, 12);
-
     const user = await User.create({
       email: normalizedEmail,
       passwordHash,
@@ -134,11 +142,11 @@ router.post('/login', async (request, response, next) => {
   }
 });
 
-router.get('/me', authenticate, (request, response) => {
-  return response.json({
+router.get('/me', authenticate, (request, response) =>
+  response.json({
     status: 'ok',
     user: toUserResponse(request.user),
-  });
-});
+  })
+);
 
 module.exports = router;

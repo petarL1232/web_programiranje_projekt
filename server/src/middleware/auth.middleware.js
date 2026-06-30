@@ -1,8 +1,15 @@
 const jwt = require('jsonwebtoken');
-
 const User = require('../models/User');
 
-const getJwtSecret = () => process.env.JWT_SECRET || 'development-secret-change-me';
+const getJwtSecret = () => {
+  const secret = process.env.JWT_SECRET;
+
+  if (!secret) {
+    throw new Error('JWT_SECRET is required');
+  }
+
+  return secret;
+};
 
 const readBearerToken = (request) => {
   const authHeader = request.headers.authorization;
@@ -21,6 +28,7 @@ const authenticate = async (request, response, next) => {
     if (!token) {
       return response.status(401).json({
         status: 'error',
+        code: 'AUTH_HEADER_MISSING',
         message: 'Missing or invalid Authorization header',
       });
     }
@@ -31,16 +39,20 @@ const authenticate = async (request, response, next) => {
     if (!user) {
       return response.status(401).json({
         status: 'error',
+        code: 'USER_NOT_FOUND',
         message: 'User no longer exists',
       });
     }
 
     request.user = user;
     return next();
-  } catch (_error) {
+  } catch (error) {
+    const expired = error?.name === 'TokenExpiredError';
+
     return response.status(401).json({
       status: 'error',
-      message: 'Invalid or expired token',
+      code: expired ? 'TOKEN_EXPIRED' : 'INVALID_TOKEN',
+      message: expired ? 'Your session has expired. Please sign in again.' : 'Invalid token',
     });
   }
 };

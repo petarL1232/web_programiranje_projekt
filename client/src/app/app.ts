@@ -213,6 +213,8 @@ export class App implements OnInit, OnDestroy {
   private readonly http = inject(HttpClient);
   private readonly apiUrl = 'http://localhost:5000';
   private socket: Socket | null = null;
+  private sessionExpiryTimeoutId: number | null = null;
+  private readonly onSessionExpired = () => this.expireSession();
 
   readonly loading = signal(false);
   readonly backendResponse = signal('');
@@ -243,6 +245,7 @@ export class App implements OnInit, OnDestroy {
   readonly activeView = signal<AppView>('dashboard');
   readonly devResponse = signal('');
   readonly error = signal('');
+  readonly sessionExpired = signal(false);
 
   readonly currentUser = signal<AuthUser | null>(this.loadStoredUser());
   readonly token = signal<string | null>(localStorage.getItem('documentChainToken'));
@@ -261,6 +264,90 @@ export class App implements OnInit, OnDestroy {
   clearError(): void {
     this.error.set('');
     this.errorView.set(null);
+  }
+
+  private validateStoredSession(): void {
+    if (!this.token()) {
+      return;
+    }
+
+    this.http
+      .get<AuthResponse>(`${this.apiUrl}/api/auth/me`, {
+        headers: this.authHeaders(),
+      })
+      .subscribe({
+        next: (response) => {
+          if (!response.user) {
+            this.expireSession();
+            return;
+          }
+
+          this.currentUser.set(response.user);
+          localStorage.setItem('documentChainUser', JSON.stringify(response.user));
+          this.scheduleSessionExpiry(this.token());
+          this.loadMyDocuments();
+        },
+        error: () => this.expireSession(),
+      });
+  }
+
+  private scheduleSessionExpiry(token: string | null): void {
+    this.clearSessionExpiryTimer();
+
+    if (!token) {
+      return;
+    }
+
+    const expiresAt = this.getJwtExpiryTime(token);
+    if (!expiresAt) {
+      return;
+    }
+
+    const remainingMs = expiresAt - Date.now();
+    if (remainingMs <= 0) {
+      this.expireSession();
+      return;
+    }
+
+    this.sessionExpiryTimeoutId = window.setTimeout(() => this.expireSession(), remainingMs + 250);
+  }
+
+  private clearSessionExpiryTimer(): void {
+    if (this.sessionExpiryTimeoutId !== null) {
+      window.clearTimeout(this.sessionExpiryTimeoutId);
+      this.sessionExpiryTimeoutId = null;
+    }
+  }
+
+  private getJwtExpiryTime(token: string): number | null {
+    try {
+      const payloadPart = token.split('.')[1];
+      if (!payloadPart) {
+        return null;
+      }
+
+      const normalizedPayload = payloadPart.replace(/-/g, '+').replace(/_/g, '/');
+      const paddedPayload = normalizedPayload.padEnd(
+        Math.ceil(normalizedPayload.length / 4) * 4,
+        '=',
+      );
+      const payload = JSON.parse(atob(paddedPayload)) as { exp?: number };
+      return typeof payload.exp === 'number' ? payload.exp * 1000 : null;
+    } catch (_error) {
+      return null;
+    }
+  }
+
+  private expireSession(): void {
+    if (!this.token() && !this.currentUser()) {
+      return;
+    }
+
+    this.logout();
+    this.sessionExpired.set(true);
+    this.setActiveView('auth');
+    this.error.set('Your session has expired. Please sign in again.');
+    this.errorView.set('auth');
   }
 
   openAccount(): void {
@@ -387,21 +474,28 @@ export class App implements OnInit, OnDestroy {
   }
 
   private showError(message: string, view: AppView = this.activeView()): void {
+    if (this.sessionExpired()) {
+      return;
+    }
+
     this.error.set(message);
     this.errorView.set(view);
   }
 
   ngOnInit(): void {
+    window.addEventListener('documentchain:session-expired', this.onSessionExpired);
     this.connectRealtime();
     this.loadPublicDocuments();
     this.loadBlockchain();
 
     if (this.token()) {
-      this.loadMyDocuments();
+      this.validateStoredSession();
     }
   }
 
   ngOnDestroy(): void {
+    window.removeEventListener('documentchain:session-expired', this.onSessionExpired);
+    this.clearSessionExpiryTimer();
     this.socket?.disconnect();
   }
 
@@ -465,6 +559,7 @@ export class App implements OnInit, OnDestroy {
   }
 
   register(email: string, password: string): void {
+    this.sessionExpired.set(false);
     this.loading.set(true);
     this.authResponse.set('');
     this.clearError();
@@ -488,6 +583,7 @@ export class App implements OnInit, OnDestroy {
   }
 
   login(email: string, password: string): void {
+    this.sessionExpired.set(false);
     this.loading.set(true);
     this.authResponse.set('');
     this.clearError();
@@ -957,6 +1053,8 @@ export class App implements OnInit, OnDestroy {
   }
 
   logout(): void {
+    this.clearSessionExpiryTimer();
+    this.sessionExpired.set(false);
     localStorage.removeItem('documentChainToken');
     localStorage.removeItem('documentChainUser');
     this.token.set(null);
@@ -1110,9 +1208,12 @@ export class App implements OnInit, OnDestroy {
   }
 
   private handleAuthSuccess(response: AuthResponse): void {
+    this.sessionExpired.set(false);
+
     if (response.token) {
       localStorage.setItem('documentChainToken', response.token);
       this.token.set(response.token);
+      this.scheduleSessionExpiry(response.token);
     }
 
     if (response.user) {
