@@ -1,0 +1,26 @@
+services:
+  - type: web
+    runtime: node
+    name: documentchain-api
+    rootDir: server
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /api/health
+    maxShutdownDelaySeconds: 15
+    envVars:
+      - key: NODE_VERSION
+        value: 22.16.0
+      - key: NODE_ENV
+        value: production
+      - key: DOCUMENT_STORAGE
+        value: mongodb
+      - key: JWT_EXPIRES_IN
+        value: 1d
+      - key: SOURCE_REPOSITORY
+        value: petarL1232/web_programiranje_projekt
+      - key: JWT_SECRET
+        generateValue: true
+      - key: MONGO_URI
+        sync: false
+      - key: CLIENT_ORIGINS
+        sync: false

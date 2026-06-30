@@ -36,11 +36,11 @@ const authenticate = async (request, response, next) => {
     const payload = jwt.verify(token, getJwtSecret());
     const user = await User.findById(payload.userId);
 
-    if (!user) {
+    if (!user || user.isActive === false) {
       return response.status(401).json({
         status: 'error',
-        code: 'USER_NOT_FOUND',
-        message: 'User no longer exists',
+        code: user ? 'USER_INACTIVE' : 'USER_NOT_FOUND',
+        message: user ? 'This account is no longer active' : 'User no longer exists',
       });
     }
 
@@ -68,7 +68,7 @@ const optionalAuthenticate = async (request, _response, next) => {
     const payload = jwt.verify(token, getJwtSecret());
     const user = await User.findById(payload.userId);
 
-    if (user) {
+    if (user && user.isActive !== false) {
       request.user = user;
     }
 

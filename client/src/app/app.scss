@@ -1356,3 +1356,31 @@ pre {
     background: linear-gradient(90deg, rgba(5, 16, 33, 0.96), rgba(5, 16, 33, 0.76));
   }
 }
+
+.repository-card {
+  min-height: 100%;
+}
+
+.repository-message {
+  display: block;
+  margin-top: 14px;
+  color: #cce8ff;
+  line-height: 1.55;
+}
+
+.status-badge.ok {
+  border-color: rgba(103, 245, 180, 0.35);
+  color: #c7ffe1;
+  background: rgba(17, 127, 82, 0.24);
+}
+
+.document-actions .btn-danger {
+  border-color: rgba(255, 117, 138, 0.42);
+  color: #ffd1da;
+  background: rgba(138, 25, 52, 0.32);
+}
+
+.document-actions .btn-danger:hover:not(:disabled) {
+  border-color: rgba(255, 148, 166, 0.72);
+  background: rgba(170, 31, 65, 0.45);
+}

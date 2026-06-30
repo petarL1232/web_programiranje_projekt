@@ -59,10 +59,16 @@
         <span class="nav-icon" aria-hidden="true">⛓</span
         ><span><strong>Blockchain</strong><small>Realtime explorer</small></span>
       </button>
-      <button type="button" [class.active]="activeView() === 'dev'" (click)="setActiveView('dev')">
-        <span class="nav-icon" aria-hidden="true">⚙</span
-        ><span><strong>Dev tools</strong><small>Test reset</small></span>
-      </button>
+      @if (devToolsEnabled) {
+        <button
+          type="button"
+          [class.active]="activeView() === 'dev'"
+          (click)="setActiveView('dev')"
+        >
+          <span class="nav-icon" aria-hidden="true">⚙</span
+          ><span><strong>Dev tools</strong><small>Test reset</small></span>
+        </button>
+      }
     </nav>
 
     <div class="sidebar-status" [class.connected]="socketConnected()">
@@ -245,6 +251,33 @@
             <details>
               <summary>Model status</summary>
               <pre>{{ modelResponse() }}</pre>
+            </details>
+          }
+        </article>
+        <article class="surface-card repository-card">
+          <div class="section-heading-row">
+            <div>
+              <p class="eyebrow">Server-side external API</p>
+              <h3>Source repository status</h3>
+            </div>
+            <span class="status-badge" [class.ok]="projectRepositoryAvailable()">GitHub API</span>
+          </div>
+          <p>
+            The backend fetches repository metadata from the GitHub REST API. This is separate from
+            document storage and does not expose any secret in the browser.
+          </p>
+          <strong class="repository-message">{{
+            projectRepositoryMessage() || 'Loading repository metadata…'
+          }}</strong>
+          <div class="actions">
+            <button class="btn btn-secondary" type="button" (click)="loadProjectRepository()">
+              Refresh source status
+            </button>
+          </div>
+          @if (projectRepositoryResponse()) {
+            <details>
+              <summary>Repository API response</summary>
+              <pre>{{ projectRepositoryResponse() }}</pre>
             </details>
           }
         </article>
@@ -618,6 +651,14 @@
                     >
                       {{ document.isPublic ? 'Make private' : 'Make public' }}
                     </button>
+                    <button
+                      class="btn btn-danger"
+                      type="button"
+                      (click)="deleteDocument(document)"
+                      [disabled]="loading()"
+                    >
+                      Delete
+                    </button>
                   }
                 </div>
                 @if (
@@ -887,7 +928,7 @@
       </section>
     }
 
-    @if (activeView() === 'dev') {
+    @if (activeView() === 'dev' && devToolsEnabled) {
       <section class="page-frame dev-frame">
         <div class="section-heading-row">
           <div>

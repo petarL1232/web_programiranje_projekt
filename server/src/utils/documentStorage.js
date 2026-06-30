@@ -2,6 +2,8 @@ const crypto = require('crypto');
 const fs = require('fs/promises');
 const path = require('path');
 
+const { getDocumentStorageMode } = require('../config/runtime');
+
 const STORAGE_ROOT = path.resolve(__dirname, '../../storage/documents');
 
 const ensureStorageRoot = async () => {
@@ -24,16 +26,25 @@ const getSafeStoredPath = (storedName) => {
 };
 
 const saveDocumentBuffer = async ({ buffer, extension }) => {
-  await ensureStorageRoot();
-
+  const storageType = getDocumentStorageMode();
   const storedName = createStoredName(extension);
-  const absolutePath = getSafeStoredPath(storedName);
 
+  if (storageType === 'mongodb') {
+    return {
+      storedName,
+      storageType,
+      fileData: Buffer.from(buffer),
+    };
+  }
+
+  await ensureStorageRoot();
+  const absolutePath = getSafeStoredPath(storedName);
   await fs.writeFile(absolutePath, buffer, { flag: 'wx' });
 
   return {
     storedName,
-    storageType: 'filesystem',
+    storageType,
+    fileData: undefined,
   };
 };
 
@@ -73,7 +84,7 @@ const deleteStoredDocumentFile = async (document) => {
   try {
     await fs.unlink(getSafeStoredPath(document.storedName));
   } catch (_error) {
-    // Development cleanup should not fail just because a file was already deleted.
+    // Logical deletion remains valid when a development file was already deleted.
   }
 };
 

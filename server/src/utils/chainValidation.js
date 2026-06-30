@@ -10,12 +10,24 @@ const getDocumentForExplorer = (document, requestUser = null) => {
 
   const ownerId = document.owner || document.userId;
   const isOwner = requestUser && sameId(ownerId, requestUser._id);
+
+  if (document.deletedAt) {
+    return {
+      id: document._id.toString(),
+      originalName: 'Deleted document',
+      isPublic: false,
+      isDeleted: true,
+      isOwnedByCurrentUser: Boolean(isOwner),
+    };
+  }
+
   const isPublic = Boolean(document.isPublic);
 
   return {
     id: document._id.toString(),
     originalName: isOwner || isPublic ? document.originalName : 'Private document',
     isPublic,
+    isDeleted: false,
     isOwnedByCurrentUser: Boolean(isOwner),
   };
 };
@@ -123,7 +135,7 @@ const loadValidatedBlockchain = async ({ includeDocuments = true, requestUser = 
   if (includeDocuments) {
     query = query.populate({
       path: 'documentId',
-      select: 'originalName isPublic userId owner',
+      select: 'originalName isPublic userId owner deletedAt',
     });
   }
 

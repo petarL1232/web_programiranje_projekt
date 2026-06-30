@@ -62,6 +62,17 @@ const documentSchema = new mongoose.Schema(
       ref: 'Block',
       default: null,
     },
+    // The file can be removed by its owner while the immutable audit record stays in the chain.
+    deletedAt: {
+      type: Date,
+      default: null,
+      index: true,
+    },
+    deletedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
   },
   {
     timestamps: true,

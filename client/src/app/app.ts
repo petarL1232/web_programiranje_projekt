@@ -2,6 +2,29 @@ import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular
 import { io, Socket } from 'socket.io-client';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 
+type DocumentChainRuntimeConfig = {
+  apiUrl?: string;
+  showDevTools?: boolean;
+};
+
+declare global {
+  interface Window {
+    DOCUMENTCHAIN_RUNTIME_CONFIG?: DocumentChainRuntimeConfig;
+  }
+}
+
+const getRuntimeConfig = () => {
+  const configured = window.DOCUMENTCHAIN_RUNTIME_CONFIG || {};
+  const apiUrl = (configured.apiUrl || 'http://localhost:5000').trim().replace(/\/+$/, '');
+  const isLocalDevelopmentHost = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+
+  return {
+    apiUrl: apiUrl || 'http://localhost:5000',
+    // Development controls are never rendered on a deployed host, even if this public file is edited.
+    showDevTools: isLocalDevelopmentHost && configured.showDevTools !== false,
+  };
+};
+
 type AuthUser = {
   id: string;
   email: string;
@@ -203,6 +226,21 @@ type BlockchainRealtimeEvent = {
   timestamp: string;
 };
 
+type ProjectRepositoryResponse = {
+  status: string;
+  message: string;
+  cached?: boolean;
+  fetchedAt?: string;
+  repository?: {
+    fullName: string;
+    url: string;
+    visibility: 'public' | 'private';
+    defaultBranch: string;
+    updatedAt: string;
+    pushedAt: string;
+  };
+};
+
 @Component({
   selector: 'app-root',
   imports: [],
@@ -211,7 +249,9 @@ type BlockchainRealtimeEvent = {
 })
 export class App implements OnInit, OnDestroy {
   private readonly http = inject(HttpClient);
-  private readonly apiUrl = 'http://localhost:5000';
+  private readonly runtimeConfig = getRuntimeConfig();
+  private readonly apiUrl = this.runtimeConfig.apiUrl;
+  readonly devToolsEnabled = this.runtimeConfig.showDevTools;
   private socket: Socket | null = null;
   private sessionExpiryTimeoutId: number | null = null;
   private readonly onSessionExpired = () => this.expireSession();
@@ -219,6 +259,9 @@ export class App implements OnInit, OnDestroy {
   readonly loading = signal(false);
   readonly backendResponse = signal('');
   readonly modelResponse = signal('');
+  readonly projectRepositoryResponse = signal('');
+  readonly projectRepositoryMessage = signal('');
+  readonly projectRepositoryAvailable = signal<boolean | null>(null);
   readonly authResponse = signal('');
   readonly uploadResponse = signal('');
   readonly lastUploadReceiptJson = signal('');
@@ -487,6 +530,7 @@ export class App implements OnInit, OnDestroy {
     this.connectRealtime();
     this.loadPublicDocuments();
     this.loadBlockchain();
+    this.loadProjectRepository();
 
     if (this.token()) {
       this.validateStoredSession();
@@ -500,6 +544,11 @@ export class App implements OnInit, OnDestroy {
   }
 
   setActiveView(view: AppView): void {
+    if (view === 'dev' && !this.devToolsEnabled) {
+      this.activeView.set('dashboard');
+      return;
+    }
+
     this.activeView.set(view);
     this.clearError();
 
@@ -520,6 +569,28 @@ export class App implements OnInit, OnDestroy {
     }
 
     window.setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }));
+  }
+
+  loadProjectRepository(): void {
+    this.http.get<ProjectRepositoryResponse>(`${this.apiUrl}/api/project/repository`).subscribe({
+      next: (response) => {
+        const repository = response.repository;
+        this.projectRepositoryAvailable.set(Boolean(repository));
+        this.projectRepositoryMessage.set(
+          repository
+            ? `${repository.fullName} · ${repository.visibility} · updated ${this.documentRelativeTime(repository.updatedAt)}`
+            : response.message,
+        );
+        this.projectRepositoryResponse.set(JSON.stringify(response, null, 2));
+      },
+      error: () => {
+        this.projectRepositoryAvailable.set(false);
+        this.projectRepositoryMessage.set(
+          'Repository metadata is temporarily unavailable. Core app features are unaffected.',
+        );
+        this.projectRepositoryResponse.set('');
+      },
+    });
   }
 
   testBackend(): void {
@@ -766,6 +837,43 @@ export class App implements OnInit, OnDestroy {
         error: (err) => {
           console.error(err);
           this.showError(err.error?.message || 'Failed to change document visibility.');
+          this.loading.set(false);
+        },
+      });
+  }
+
+  deleteDocument(document: DocumentSummary): void {
+    if (!this.token()) {
+      this.showError('Login is required to delete a document.');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Delete "${document.originalName}"? The file will no longer be downloadable. Its blockchain audit block stays permanently so the upload history remains verifiable.`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    this.loading.set(true);
+    this.clearError();
+
+    this.http
+      .delete<{ status: string; message: string }>(`${this.apiUrl}/api/documents/${document.id}`, {
+        headers: this.authHeaders(),
+      })
+      .subscribe({
+        next: (response) => {
+          this.documentResponse.set(JSON.stringify(response, null, 2));
+          this.loadMyDocuments();
+          this.loadPublicDocuments();
+          this.loadBlockchain();
+          this.loading.set(false);
+        },
+        error: (err) => {
+          console.error(err);
+          this.showError(err.error?.message || 'Document deletion failed.');
           this.loading.set(false);
         },
       });

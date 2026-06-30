@@ -7,7 +7,11 @@ const Block = require('../models/Block');
 const Document = require('../models/Document');
 const { calculateBlockHash, calculateFileHash } = require('../utils/blockchain');
 const { getChainStatusForBlock, loadValidatedBlockchain } = require('../utils/chainValidation');
-const { readDocumentBuffer, saveDocumentBuffer } = require('../utils/documentStorage');
+const {
+  deleteStoredDocumentFile,
+  readDocumentBuffer,
+  saveDocumentBuffer,
+} = require('../utils/documentStorage');
 const {
   MAX_FILE_SIZE_BYTES,
   sanitizeOriginalFileName,
@@ -83,6 +87,7 @@ const toUploadReceipt = ({ document, block }) => ({
 const findOwnedDocument = (documentId, userId) =>
   Document.findOne({
     _id: documentId,
+    deletedAt: null,
     $or: [{ userId }, { owner: userId }],
   });
 
@@ -101,46 +106,64 @@ const getExpectedPreviousHash = async (block) => {
   return previousBlock ? previousBlock.hash : null;
 };
 
-const createBlockForDocument = async ({ document, documentHash, owner }) => {
-  const lastBlock = await Block.findOne().sort({ index: -1 });
-  const nextIndex = lastBlock ? lastBlock.index + 1 : 0;
-  const previousHash = lastBlock ? lastBlock.hash : 'GENESIS';
-  const nonce = 0;
-  const createdAt = new Date();
-  const blockHash = calculateBlockHash({
-    index: nextIndex,
-    documentId: document._id,
-    owner,
-    documentHash,
-    previousHash,
-    createdAt,
-    nonce,
-  });
+const isDuplicateKeyError = (error) => error?.code === 11000;
 
-  return Block.create({
-    index: nextIndex,
-    documentId: document._id,
-    owner,
-    documentHash,
-    fileHash: documentHash,
-    previousHash,
-    hash: blockHash,
-    nonce,
-    createdAt,
-    updatedAt: createdAt,
-  });
+const createBlockForDocument = async ({ document, documentHash, owner }) => {
+  // The unique index on Block.index is the final guard. A retry prevents two nearly
+  // simultaneous uploads from reusing the same last block and creating a fork.
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const lastBlock = await Block.findOne().sort({ index: -1 });
+    const nextIndex = lastBlock ? lastBlock.index + 1 : 0;
+    const previousHash = lastBlock ? lastBlock.hash : 'GENESIS';
+    const nonce = 0;
+    const createdAt = new Date();
+    const blockHash = calculateBlockHash({
+      index: nextIndex,
+      documentId: document._id,
+      owner,
+      documentHash,
+      previousHash,
+      createdAt,
+      nonce,
+    });
+
+    try {
+      return await Block.create({
+        index: nextIndex,
+        documentId: document._id,
+        owner,
+        documentHash,
+        fileHash: documentHash,
+        previousHash,
+        hash: blockHash,
+        nonce,
+        createdAt,
+        updatedAt: createdAt,
+      });
+    } catch (error) {
+      if (!isDuplicateKeyError(error) || attempt === 4) {
+        throw error;
+      }
+    }
+  }
+
+  throw new Error('Could not allocate a blockchain block index');
 };
 
 router.post('/upload', authenticate, upload.single('document'), async (request, response, next) => {
+  let storedFile = null;
+  let document = null;
+  let block = null;
+
   try {
     const fileInfo = validateUploadedFile(request.file);
     const documentHash = calculateFileHash(request.file.buffer);
-    const storedFile = await saveDocumentBuffer({
+    storedFile = await saveDocumentBuffer({
       buffer: request.file.buffer,
       extension: fileInfo.extension,
     });
 
-    const document = await Document.create({
+    document = await Document.create({
       userId: request.user._id,
       owner: request.user._id,
       originalName: fileInfo.safeOriginalName,
@@ -151,9 +174,10 @@ router.post('/upload', authenticate, upload.single('document'), async (request, 
       fileHash: documentHash,
       isPublic: false,
       storageType: storedFile.storageType,
+      fileData: storedFile.fileData,
     });
 
-    const block = await createBlockForDocument({
+    block = await createBlockForDocument({
       document,
       documentHash,
       owner: request.user._id,
@@ -171,6 +195,27 @@ router.post('/upload', authenticate, upload.single('document'), async (request, 
       ...toUploadReceipt({ document, block }),
     });
   } catch (error) {
+    // If creating the document or block failed before a block was committed,
+    // remove the newly written file/document so uploads do not leave orphaned data behind.
+    if (!block && document) {
+      try {
+        await Document.deleteOne({ _id: document._id });
+      } catch (cleanupError) {
+        console.error('Failed to clean up an incomplete document record:', cleanupError);
+      }
+    }
+
+    if (!block && storedFile?.storageType === 'filesystem') {
+      try {
+        await deleteStoredDocumentFile({
+          storageType: storedFile.storageType,
+          storedName: storedFile.storedName,
+        });
+      } catch (cleanupError) {
+        console.error('Failed to clean up an incomplete stored document file:', cleanupError);
+      }
+    }
+
     return next(error);
   }
 });
@@ -181,8 +226,11 @@ const verifyUploadedHandler = async (request, response, next) => {
     const documentHash = calculateFileHash(request.file.buffer);
 
     const matchingDocuments = await Document.find({
-      $or: [{ userId: request.user._id }, { owner: request.user._id }, { isPublic: true }],
+      deletedAt: null,
       $and: [
+        {
+          $or: [{ userId: request.user._id }, { owner: request.user._id }, { isPublic: true }],
+        },
         {
           $or: [{ documentHash }, { fileHash: documentHash }],
         },
@@ -270,6 +318,7 @@ router.post('/verify-upload', authenticate, upload.single('document'), verifyUpl
 router.get('/mine', authenticate, async (request, response, next) => {
   try {
     const documents = await Document.find({
+      deletedAt: null,
       $or: [{ userId: request.user._id }, { owner: request.user._id }],
     })
       .select('-fileData')
@@ -291,7 +340,7 @@ router.get('/mine', authenticate, async (request, response, next) => {
 
 router.get('/public', optionalAuthenticate, async (request, response, next) => {
   try {
-    const documents = await Document.find({ isPublic: true })
+    const documents = await Document.find({ isPublic: true, deletedAt: null })
       .select('-fileData')
       .populate({
         path: 'blockId',
@@ -348,6 +397,47 @@ router.patch('/:documentId/visibility', authenticate, async (request, response, 
   }
 });
 
+router.delete('/:documentId', authenticate, async (request, response, next) => {
+  try {
+    const document = await findOwnedDocument(request.params.documentId, request.user._id).select(
+      '+fileData'
+    );
+
+    if (!document) {
+      return response.status(404).json({
+        status: 'error',
+        message: 'Document not found for current user',
+      });
+    }
+
+    await deleteStoredDocumentFile(document);
+    document.fileData = undefined;
+    document.isPublic = false;
+    document.deletedAt = new Date();
+    document.deletedBy = request.user._id;
+    await document.save();
+
+    broadcastChainChanged(
+      'A document was deleted while its blockchain audit record was retained'
+    ).catch((error) => {
+      console.error('Failed to broadcast blockchain chain-updated event:', error);
+    });
+
+    return response.json({
+      status: 'ok',
+      message:
+        'Document file deleted. Its historical blockchain block remains in the append-only audit log.',
+      document: {
+        id: document._id.toString(),
+        deletedAt: document.deletedAt,
+        blockId: document.blockId ? document.blockId.toString() : null,
+      },
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
 const verifyStoredHandler = async (request, response, next) => {
   try {
     const document = await findDownloadableOrPublicDocumentWithBlock(request.params.documentId);
@@ -356,6 +446,14 @@ const verifyStoredHandler = async (request, response, next) => {
       return response.status(404).json({
         status: 'error',
         message: 'Document not found',
+      });
+    }
+
+    if (document.deletedAt) {
+      return response.status(410).json({
+        status: 'error',
+        message:
+          'This document file was deleted by its owner. Its blockchain audit record remains available.',
       });
     }
 
@@ -473,6 +571,13 @@ router.get('/:documentId/download', optionalAuthenticate, async (request, respon
       return response.status(404).json({
         status: 'error',
         message: 'Document not found',
+      });
+    }
+
+    if (document.deletedAt) {
+      return response.status(410).json({
+        status: 'error',
+        message: 'This document file was deleted by its owner and is no longer downloadable.',
       });
     }
 
