@@ -1,4 +1,4 @@
-import { Component, OnDestroy, OnInit, inject, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import { io, Socket } from 'socket.io-client';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 
@@ -135,6 +135,10 @@ type BlockchainValidationResponse = {
 
 type AppView = 'dashboard' | 'auth' | 'upload' | 'documents' | 'verify' | 'blockchain' | 'dev';
 
+type DocumentScope = 'mine' | 'public';
+type DocumentFilter = 'all' | 'private' | 'public' | 'recent';
+type DocumentSort = 'newest' | 'oldest' | 'name-asc' | 'name-desc';
+
 type BlockchainExplorerDocument = {
   id: string;
   originalName: string;
@@ -244,6 +248,144 @@ export class App implements OnInit, OnDestroy {
   readonly token = signal<string | null>(localStorage.getItem('documentChainToken'));
   readonly myDocuments = signal<DocumentSummary[]>([]);
   readonly publicDocuments = signal<DocumentSummary[]>([]);
+  readonly errorView = signal<AppView | null>(null);
+  readonly selectedUploadFileName = signal('');
+  readonly selectedVerifyFileName = signal('');
+  readonly documentScope = signal<DocumentScope>('mine');
+  readonly documentFilter = signal<DocumentFilter>('all');
+  readonly documentSort = signal<DocumentSort>('newest');
+  readonly documentQuery = signal('');
+  readonly filteredDocuments = computed(() => this.getFilteredDocuments());
+  readonly activeLibraryCount = computed(() => this.filteredDocuments().length);
+
+  clearError(): void {
+    this.error.set('');
+    this.errorView.set(null);
+  }
+
+
+  openAccount(): void {
+    this.setActiveView('auth');
+  }
+
+  accountInitials(): string {
+    const email = this.currentUser()?.email;
+
+    if (!email) {
+      return 'DC';
+    }
+
+    return email.slice(0, 2).toUpperCase();
+  }
+
+  selectUploadFile(files: FileList | null): void {
+    this.selectedUploadFileName.set(files?.[0]?.name || '');
+    this.clearError();
+  }
+
+  selectVerifyFile(files: FileList | null): void {
+    this.selectedVerifyFileName.set(files?.[0]?.name || '');
+    this.clearError();
+  }
+
+  setDocumentScope(scope: DocumentScope): void {
+    this.documentScope.set(scope);
+    this.documentFilter.set('all');
+    this.documentQuery.set('');
+    this.clearError();
+
+    if (scope === 'mine' && this.token()) {
+      this.loadMyDocuments();
+    }
+
+    if (scope === 'public') {
+      this.loadPublicDocuments();
+    }
+  }
+
+  setDocumentFilter(filter: string): void {
+    const allowed: DocumentFilter[] = ['all', 'private', 'public', 'recent'];
+    this.documentFilter.set(allowed.includes(filter as DocumentFilter) ? (filter as DocumentFilter) : 'all');
+  }
+
+  setDocumentSort(sort: string): void {
+    const allowed: DocumentSort[] = ['newest', 'oldest', 'name-asc', 'name-desc'];
+    this.documentSort.set(allowed.includes(sort as DocumentSort) ? (sort as DocumentSort) : 'newest');
+  }
+
+  setDocumentQuery(query: string): void {
+    this.documentQuery.set(query);
+  }
+
+  clearDocumentFilters(): void {
+    this.documentFilter.set('all');
+    this.documentSort.set('newest');
+    this.documentQuery.set('');
+  }
+
+  documentRelativeTime(value: string | Date | undefined): string {
+    if (!value) {
+      return 'Unknown time';
+    }
+
+    const seconds = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 1000));
+    if (seconds < 60) return 'just now';
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes} min ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours} h ago`;
+    const days = Math.floor(hours / 24);
+    if (days < 7) return `${days} day${days === 1 ? '' : 's'} ago`;
+    const weeks = Math.floor(days / 7);
+    if (weeks < 5) return `${weeks} week${weeks === 1 ? '' : 's'} ago`;
+    return this.formatDate(value);
+  }
+
+  documentTypeLabel(document: DocumentSummary): string {
+    const type = document.mimeType.toLowerCase();
+    if (type.includes('pdf')) return 'PDF';
+    if (type.includes('word') || type.includes('officedocument')) return 'DOC';
+    if (type.includes('image')) return 'IMG';
+    if (type.includes('text')) return 'TXT';
+    return 'FILE';
+  }
+
+  private getFilteredDocuments(): DocumentSummary[] {
+    const source = this.documentScope() === 'mine' ? this.myDocuments() : this.publicDocuments();
+    const filter = this.documentFilter();
+    const query = this.documentQuery().trim().toLocaleLowerCase();
+    const oneWeek = 7 * 24 * 60 * 60 * 1000;
+
+    const filtered = source.filter((document) => {
+      if (filter === 'private' && document.isPublic) return false;
+      if (filter === 'public' && !document.isPublic) return false;
+      if (filter === 'recent' && Date.now() - new Date(document.createdAt).getTime() > oneWeek) return false;
+      if (!query) return true;
+
+      return [document.originalName, document.mimeType, document.documentHash || document.fileHash]
+        .join(' ')
+        .toLocaleLowerCase()
+        .includes(query);
+    });
+
+    return [...filtered].sort((left, right) => {
+      if (this.documentSort() === 'oldest') {
+        return new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime();
+      }
+      if (this.documentSort() === 'name-asc') {
+        return left.originalName.localeCompare(right.originalName);
+      }
+      if (this.documentSort() === 'name-desc') {
+        return right.originalName.localeCompare(left.originalName);
+      }
+      return new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime();
+    });
+  }
+
+  private showError(message: string, view: AppView = this.activeView()): void {
+    this.error.set(message);
+    this.errorView.set(view);
+  }
 
   ngOnInit(): void {
     this.connectRealtime();
@@ -261,6 +403,11 @@ export class App implements OnInit, OnDestroy {
 
   setActiveView(view: AppView): void {
     this.activeView.set(view);
+    this.clearError();
+
+    if (view === 'documents' && !this.token()) {
+      this.documentScope.set('public');
+    }
 
     if (view === 'dashboard' || view === 'blockchain') {
       this.loadBlockchain();
@@ -273,12 +420,14 @@ export class App implements OnInit, OnDestroy {
         this.loadMyDocuments();
       }
     }
+
+    window.setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }));
   }
 
   testBackend(): void {
     this.loading.set(true);
     this.backendResponse.set('');
-    this.error.set('');
+    this.clearError();
 
     this.http.get(`${this.apiUrl}/api/health`).subscribe({
       next: (response) => {
@@ -287,7 +436,7 @@ export class App implements OnInit, OnDestroy {
       },
       error: (err) => {
         console.error(err);
-        this.error.set('Backend request failed. Check if server is running on port 5000.');
+        this.showError('Backend request failed. Check if server is running on port 5000.');
         this.loading.set(false);
       },
     });
@@ -296,7 +445,7 @@ export class App implements OnInit, OnDestroy {
   testModels(): void {
     this.loading.set(true);
     this.modelResponse.set('');
-    this.error.set('');
+    this.clearError();
 
     this.http.get(`${this.apiUrl}/api/models/status`).subscribe({
       next: (response) => {
@@ -305,7 +454,7 @@ export class App implements OnInit, OnDestroy {
       },
       error: (err) => {
         console.error(err);
-        this.error.set('Model status request failed. Check if server and MongoDB are running.');
+        this.showError('Model status request failed. Check if server and MongoDB are running.');
         this.loading.set(false);
       },
     });
@@ -314,30 +463,28 @@ export class App implements OnInit, OnDestroy {
   register(email: string, password: string): void {
     this.loading.set(true);
     this.authResponse.set('');
-    this.error.set('');
+    this.clearError();
 
-    this.http
-      .post<AuthResponse>(`${this.apiUrl}/api/auth/register`, { email, password })
-      .subscribe({
-        next: (response) => {
-          this.handleAuthSuccess(response);
-          this.loadMyDocuments();
-          this.loadPublicDocuments();
-          this.loadBlockchain();
-          this.loading.set(false);
-        },
-        error: (err) => {
-          console.error(err);
-          this.error.set(err.error?.message || 'Registration failed.');
-          this.loading.set(false);
-        },
-      });
+    this.http.post<AuthResponse>(`${this.apiUrl}/api/auth/register`, { email, password }).subscribe({
+      next: (response) => {
+        this.handleAuthSuccess(response);
+        this.loadMyDocuments();
+        this.loadPublicDocuments();
+        this.loadBlockchain();
+        this.loading.set(false);
+      },
+      error: (err) => {
+        console.error(err);
+        this.showError(err.error?.message || 'Registration failed.');
+        this.loading.set(false);
+      },
+    });
   }
 
   login(email: string, password: string): void {
     this.loading.set(true);
     this.authResponse.set('');
-    this.error.set('');
+    this.clearError();
 
     this.http.post<AuthResponse>(`${this.apiUrl}/api/auth/login`, { email, password }).subscribe({
       next: (response) => {
@@ -349,7 +496,7 @@ export class App implements OnInit, OnDestroy {
       },
       error: (err) => {
         console.error(err);
-        this.error.set(err.error?.message || 'Login failed.');
+        this.showError(err.error?.message || 'Login failed.');
         this.loading.set(false);
       },
     });
@@ -357,13 +504,13 @@ export class App implements OnInit, OnDestroy {
 
   getProfile(): void {
     if (!this.token()) {
-      this.error.set('You need to login first.');
+      this.showError('You need to login first.');
       return;
     }
 
     this.loading.set(true);
     this.authResponse.set('');
-    this.error.set('');
+    this.clearError();
 
     this.http
       .get<AuthResponse>(`${this.apiUrl}/api/auth/me`, {
@@ -381,20 +528,21 @@ export class App implements OnInit, OnDestroy {
         },
         error: (err) => {
           console.error(err);
-          this.error.set(err.error?.message || 'Profile request failed.');
+          this.showError(err.error?.message || 'Profile request failed.');
           this.loading.set(false);
         },
       });
   }
 
   uploadDocument(files: FileList | null): void {
+    this.selectedUploadFileName.set(files?.[0]?.name || '');
     if (!this.token()) {
-      this.error.set('You need to login before uploading a document.');
+      this.showError('You need to login before uploading a document.');
       return;
     }
 
     if (!files || files.length === 0) {
-      this.error.set('Choose a document first.');
+      this.showError('Choose a document first.');
       return;
     }
 
@@ -403,9 +551,11 @@ export class App implements OnInit, OnDestroy {
 
     this.loading.set(true);
     this.uploadResponse.set('');
+    this.selectedUploadFileName.set('');
+    this.selectedVerifyFileName.set('');
     this.lastUploadReceiptJson.set('');
     this.lastUploadReceiptFileName.set('documentchain-upload-receipt.json');
-    this.error.set('');
+    this.clearError();
 
     this.http
       .post<UploadResponse>(`${this.apiUrl}/api/documents/upload`, formData, {
@@ -425,7 +575,7 @@ export class App implements OnInit, OnDestroy {
         },
         error: (err) => {
           console.error(err);
-          this.error.set(err.error?.message || 'Document upload failed.');
+          this.showError(err.error?.message || 'Document upload failed.');
           this.loading.set(false);
         },
       });
@@ -433,7 +583,7 @@ export class App implements OnInit, OnDestroy {
 
   downloadUploadReceipt(): void {
     if (!this.lastUploadReceiptJson()) {
-      this.error.set('No upload receipt is available yet. Upload a document first.');
+      this.showError('No upload receipt is available yet. Upload a document first.');
       return;
     }
 
@@ -461,7 +611,7 @@ export class App implements OnInit, OnDestroy {
         },
         error: (err) => {
           console.error(err);
-          this.error.set(err.error?.message || 'Failed to load your documents.');
+          this.showError(err.error?.message || 'Failed to load your documents.');
         },
       });
   }
@@ -475,20 +625,20 @@ export class App implements OnInit, OnDestroy {
       },
       error: (err) => {
         console.error(err);
-        this.error.set(err.error?.message || 'Failed to load public documents.');
+        this.showError(err.error?.message || 'Failed to load public documents.');
       },
     });
   }
 
   toggleDocumentVisibility(document: DocumentSummary): void {
     if (!this.token()) {
-      this.error.set('Login is required to change document visibility.');
+      this.showError('Login is required to change document visibility.');
       return;
     }
 
     if (!document.isPublic) {
       const confirmed = window.confirm(
-        `Make "${document.originalName}" public? Anyone will be able to see it in Public documents, verify it, and download it through the backend route.`,
+        `Make "${document.originalName}" public? Anyone will be able to see it in Public documents, verify it, and download it through the backend route.`
       );
 
       if (!confirmed) {
@@ -497,12 +647,14 @@ export class App implements OnInit, OnDestroy {
     }
 
     this.loading.set(true);
-    this.error.set('');
+    this.clearError();
 
     this.http
-      .patch<
-        DocumentListResponse | { status: string; message: string; document: DocumentSummary }
-      >(`${this.apiUrl}/api/documents/${document.id}/visibility`, { isPublic: !document.isPublic }, { headers: this.authHeaders() })
+      .patch<DocumentListResponse | { status: string; message: string; document: DocumentSummary }>(
+        `${this.apiUrl}/api/documents/${document.id}/visibility`,
+        { isPublic: !document.isPublic },
+        { headers: this.authHeaders() }
+      )
       .subscribe({
         next: (response) => {
           this.documentResponse.set(JSON.stringify(response, null, 2));
@@ -513,7 +665,7 @@ export class App implements OnInit, OnDestroy {
         },
         error: (err) => {
           console.error(err);
-          this.error.set(err.error?.message || 'Failed to change document visibility.');
+          this.showError(err.error?.message || 'Failed to change document visibility.');
           this.loading.set(false);
         },
       });
@@ -530,7 +682,7 @@ export class App implements OnInit, OnDestroy {
       },
       error: (err) => {
         console.error(err);
-        this.error.set(err.error?.message || 'Failed to load blockchain explorer.');
+        this.showError(err.error?.message || 'Failed to load blockchain explorer.');
       },
     });
   }
@@ -542,13 +694,11 @@ export class App implements OnInit, OnDestroy {
     this.chainBreakDetails.set('');
     this.chainValidationOk.set(null);
     this.devResponse.set('');
-    this.error.set('');
+    this.clearError();
 
     const options = this.token() ? { headers: this.authHeaders() } : {};
 
-    this.http
-      .get<BlockchainValidationResponse>(`${this.apiUrl}/api/blockchain/validate`, options)
-      .subscribe({
+    this.http.get<BlockchainValidationResponse>(`${this.apiUrl}/api/blockchain/validate`, options).subscribe({
         next: (response) => {
           const isChainValid = response.validation?.isChainValid ?? false;
           const brokenAtIndex = response.validation?.brokenAtIndex ?? null;
@@ -560,19 +710,31 @@ export class App implements OnInit, OnDestroy {
           this.chainValidationMessage.set(
             isChainValid
               ? 'Blockchain lanac je valjan. Ova provjera čita samo block zapise, ne fileove.'
-              : `Blockchain lanac je pukao na bloku #${brokenAtIndex}. Blokovi od #${affectedFromIndex} nadalje nisu potpuno pouzdani.`,
+              : `Blockchain lanac je pukao na bloku #${brokenAtIndex}. Blokovi od #${affectedFromIndex} nadalje nisu potpuno pouzdani.`
           );
           this.chainBreakDetails.set(
             isChainValid
               ? ''
-              : `Direktno neispravni blokovi: ${this.formatBlockIndexes(directBroken)}. Zahvaćeni blokovi: ${this.formatBlockIndexes(affectedBlocks)}.`,
+              : `Direktno neispravni blokovi: ${this.formatBlockIndexes(directBroken)}. Zahvaćeni blokovi: ${this.formatBlockIndexes(affectedBlocks)}.`
           );
           this.chainValidationResponse.set(JSON.stringify(response, null, 2));
+          const currentSummary = this.blockchainSummary();
+          if (currentSummary && response.validation) {
+            this.blockchainSummary.set({
+              ...currentSummary,
+              isChainValid,
+              firstBrokenIndex: response.validation.firstBrokenIndex ?? null,
+              brokenAtIndex,
+              affectedFromIndex: affectedFromIndex ?? null,
+              directBrokenBlockIndexes: directBroken,
+              affectedBlockIndexes: affectedBlocks,
+            });
+          }
           this.loading.set(false);
         },
         error: (err) => {
           console.error(err);
-          this.error.set(err.error?.message || 'Blockchain validation failed.');
+          this.showError(err.error?.message || 'Blockchain validation failed.');
           this.loading.set(false);
         },
       });
@@ -580,12 +742,12 @@ export class App implements OnInit, OnDestroy {
 
   downloadDocument(document: DocumentSummary): void {
     if (!document.isPublic && !this.token()) {
-      this.error.set('Login is required to download private documents.');
+      this.showError('Login is required to download private documents.');
       return;
     }
 
     this.loading.set(true);
-    this.error.set('');
+    this.clearError();
 
     const options = this.token()
       ? { headers: this.authHeaders(), responseType: 'blob' as const }
@@ -598,9 +760,8 @@ export class App implements OnInit, OnDestroy {
       },
       error: (err) => {
         console.error(err);
-        this.error.set(
-          err.error?.message ||
-            'Download failed. Private documents can be downloaded only by owner.',
+        this.showError(
+          err.error?.message || 'Download failed. Private documents can be downloaded only by owner.'
         );
         this.loading.set(false);
       },
@@ -609,7 +770,7 @@ export class App implements OnInit, OnDestroy {
 
   verifyStoredDocument(document: DocumentSummary): void {
     if (!document.isPublic && !this.token()) {
-      this.error.set('Login is required to verify private documents.');
+      this.showError('Login is required to verify private documents.');
       return;
     }
 
@@ -622,24 +783,19 @@ export class App implements OnInit, OnDestroy {
     this.storedBlockchainCheckOk.set(null);
     this.storedWholeChainCheckOk.set(null);
     this.storedChainBreakMessage.set('');
-    this.error.set('');
+    this.clearError();
 
     const options = this.token() ? { headers: this.authHeaders() } : {};
 
     this.http
-      .post<StoredVerificationResponse>(
-        `${this.apiUrl}/api/documents/${document.id}/verify`,
-        {},
-        options,
-      )
+      .post<StoredVerificationResponse>(`${this.apiUrl}/api/documents/${document.id}/verify`, {}, options)
       .subscribe({
         next: (response) => {
           const documentOk = response.verification?.documentIntegrity?.isValid ?? false;
           const blockchainOk = response.verification?.blockchainIntegrity?.isValid ?? false;
           const wholeChainOk = response.verification?.chainIntegrity?.isChainValid ?? false;
           const firstBrokenIndex = response.verification?.chainIntegrity?.firstBrokenIndex ?? null;
-          const affectedFromIndex =
-            response.verification?.chainIntegrity?.affectedFromIndex ?? null;
+          const affectedFromIndex = response.verification?.chainIntegrity?.affectedFromIndex ?? null;
           const isAuthentic = response.verification?.isAuthentic ?? false;
           let message =
             'Dokument je izmijenjen ili oštećen: trenutni hash ne odgovara Document/Block hashu.';
@@ -650,8 +806,7 @@ export class App implements OnInit, OnDestroy {
           } else if (documentOk && blockchainOk && !wholeChainOk) {
             message = `Hash dokumenta i njegov blok izgledaju OK, ali cijeli blockchain lanac je pukao na bloku #${firstBrokenIndex}.`;
           } else if (documentOk && !blockchainOk) {
-            message =
-              'Hash dokumenta je ispravan, ali hash bloka ili direct previousHash veza nije valjana.';
+            message = 'Hash dokumenta je ispravan, ali hash bloka ili direct previousHash veza nije valjana.';
           }
 
           this.storedDocumentCheckOk.set(documentOk);
@@ -660,7 +815,7 @@ export class App implements OnInit, OnDestroy {
           this.storedChainBreakMessage.set(
             wholeChainOk
               ? ''
-              : `Lanac je pukao na bloku #${firstBrokenIndex}; blokovi od #${affectedFromIndex} nadalje nisu potpuno pouzdani.`,
+              : `Lanac je pukao na bloku #${firstBrokenIndex}; blokovi od #${affectedFromIndex} nadalje nisu potpuno pouzdani.`
           );
           this.storedVerificationMessage.set(message);
           this.verifyMessage.set(message);
@@ -669,20 +824,21 @@ export class App implements OnInit, OnDestroy {
         },
         error: (err) => {
           console.error(err);
-          this.error.set(err.error?.message || 'Stored document verification failed.');
+          this.showError(err.error?.message || 'Stored document verification failed.');
           this.loading.set(false);
         },
       });
   }
 
   verifyUploadedDocument(files: FileList | null): void {
+    this.selectedVerifyFileName.set(files?.[0]?.name || '');
     if (!this.token()) {
-      this.error.set('Login is required to verify uploaded files.');
+      this.showError('Login is required to verify uploaded files.');
       return;
     }
 
     if (!files || files.length === 0) {
-      this.error.set('Choose a document for verification first.');
+      this.showError('Choose a document for verification first.');
       return;
     }
 
@@ -692,13 +848,13 @@ export class App implements OnInit, OnDestroy {
     this.loading.set(true);
     this.verifyUploadResponse.set('');
     this.verifyMessage.set('');
-    this.error.set('');
+    this.clearError();
 
     this.http
       .post<UploadedVerificationResponse>(
         `${this.apiUrl}/api/documents/verify-uploaded`,
         formData,
-        { headers: this.authHeaders() },
+        { headers: this.authHeaders() }
       )
       .subscribe({
         next: (response) => {
@@ -711,16 +867,14 @@ export class App implements OnInit, OnDestroy {
           if (!isKnown) {
             this.verifyMessage.set('Dokument je nepoznat ili izmijenjen.');
           } else if (chainOk) {
-            this.verifyMessage.set(
-              'Dokument postoji u valjanoj blockchain evidenciji kojoj imaš pristup.',
-            );
+            this.verifyMessage.set('Dokument postoji u valjanoj blockchain evidenciji kojoj imaš pristup.');
           } else if (affectedMatches.length > 0) {
             this.verifyMessage.set(
-              `Hash dokumenta postoji u dostupnim zapisima, ali lanac je pukao na bloku #${firstBrokenIndex}, prije ili na pronađenom zapisu.`,
+              `Hash dokumenta postoji u dostupnim zapisima, ali lanac je pukao na bloku #${firstBrokenIndex}, prije ili na pronađenom zapisu.`
             );
           } else {
             this.verifyMessage.set(
-              `Hash dokumenta postoji u dostupnim zapisima, ali cijeli blockchain lanac nije valjan. Prvi problem je na bloku #${firstBrokenIndex}.`,
+              `Hash dokumenta postoji u dostupnim zapisima, ali cijeli blockchain lanac nije valjan. Prvi problem je na bloku #${firstBrokenIndex}.`
             );
           }
           this.verifyUploadResponse.set(JSON.stringify(response, null, 2));
@@ -728,7 +882,7 @@ export class App implements OnInit, OnDestroy {
         },
         error: (err) => {
           console.error(err);
-          this.error.set(err.error?.message || 'Uploaded document verification failed.');
+          this.showError(err.error?.message || 'Uploaded document verification failed.');
           this.loading.set(false);
         },
       });
@@ -736,7 +890,7 @@ export class App implements OnInit, OnDestroy {
 
   resetTestData(): void {
     const confirmed = window.confirm(
-      'This deletes all documents, stored files, and blockchain blocks from the local development database. Users stay saved. Continue?',
+      'This deletes all documents, stored files, and blockchain blocks from the local development database. Users stay saved. Continue?'
     );
 
     if (!confirmed) {
@@ -745,7 +899,7 @@ export class App implements OnInit, OnDestroy {
 
     this.loading.set(true);
     this.devResponse.set('');
-    this.error.set('');
+    this.clearError();
 
     this.http.post(`${this.apiUrl}/api/dev/reset-documents-blocks`, {}).subscribe({
       next: (response) => {
@@ -753,6 +907,8 @@ export class App implements OnInit, OnDestroy {
         this.myDocuments.set([]);
         this.publicDocuments.set([]);
         this.uploadResponse.set('');
+        this.selectedUploadFileName.set('');
+        this.selectedVerifyFileName.set('');
         this.lastUploadReceiptJson.set('');
         this.lastUploadReceiptFileName.set('documentchain-upload-receipt.json');
         this.documentResponse.set('');
@@ -776,9 +932,8 @@ export class App implements OnInit, OnDestroy {
       },
       error: (err) => {
         console.error(err);
-        this.error.set(
-          err.error?.message ||
-            'Development reset failed. This route works only in NODE_ENV=development.',
+        this.showError(
+          err.error?.message || 'Development reset failed. This route works only in NODE_ENV=development.'
         );
         this.loading.set(false);
       },
@@ -811,7 +966,7 @@ export class App implements OnInit, OnDestroy {
     this.chainBreakDetails.set('');
     this.chainValidationOk.set(null);
     this.devResponse.set('');
-    this.error.set('');
+    this.clearError();
     this.loadBlockchain();
   }
 
@@ -867,8 +1022,8 @@ export class App implements OnInit, OnDestroy {
           blocks: this.blockchainBlocks(),
         },
         null,
-        2,
-      ),
+        2
+      )
     );
     this.addRealtimeEvent(event.message);
   }
@@ -983,13 +1138,11 @@ export class App implements OnInit, OnDestroy {
   }
 
   private safeFileName(value: string): string {
-    return (
-      value
-        .trim()
-        .replace(/[^a-zA-Z0-9-_]+/g, '-')
-        .replace(/^-+|-+$/g, '')
-        .slice(0, 60) || 'document'
-    );
+    return value
+      .trim()
+      .replace(/[^a-zA-Z0-9-_]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 60) || 'document';
   }
 
   private saveBlob(blob: Blob, fileName: string): void {
